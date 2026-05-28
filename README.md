@@ -36,7 +36,7 @@
 **一言紹介：**  
 DOI か URL を貼るだけで BibTeX が手に入る、研究者のための引用変換ツール。
 
-**公開 URL：** `[TODO: Vercel URL を記載`](https://citation-bibtex-converter.vercel.app/)
+**公開 URL：** `(https://citation-bibtex-converter.vercel.app/)`
 
 ---
 
