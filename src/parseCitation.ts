@@ -252,8 +252,9 @@ function parseIEEE(raw: string): ParsedFields {
   // IEEE source has "Title," — strip trailing comma inside quotes
   const title   = titleM ? titleM[1].trim().replace(/,\s*$/, '') : ''
 
-  // Journal: after "in " before ", vol."
+  // Journal article: "in Journal, vol." | Conference: "Title," YEAR Name (ABBREV), City
   const journalM = raw.match(/\bin\s+(.+?),\s*vol\./i)
+               ?? raw.match(/"[^"]+,?"\s+(\d{4}\s+.+?\([A-Z\w]+\)),\s*[A-Z]/)
 
   return {
     author,
