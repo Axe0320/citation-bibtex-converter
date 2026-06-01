@@ -249,7 +249,8 @@ function parseIEEE(raw: string): ParsedFields {
 
   // Title: text inside the first pair of ASCII double quotes
   const titleM  = raw.match(/"([^"]+)"/)
-  const title   = titleM ? titleM[1].trim() : ''
+  // IEEE source has "Title," — strip trailing comma inside quotes
+  const title   = titleM ? titleM[1].trim().replace(/,\s*$/, '') : ''
 
   // Journal: after "in " before ", vol."
   const journalM = raw.match(/\bin\s+(.+?),\s*vol\./i)
@@ -342,9 +343,10 @@ function parseACMACL(raw: string): ParsedFields {
   const title  = titleM ? titleM[1].trim() : ''
 
   // Booktitle/venue: after "In " up to ", pages" (ACL) or publisher/dot (ACM)
-  // Note: no /i flag — requires capital "In" to avoid matching lowercase "in" inside titles
+  // Stop at "(CONF YEAR)" acronym — catches ACM's "(LCTES 2024)" and LREC's "(LREC-COLING 2024)"
+  // Fallback: stop at ", pages" for ACL-style venues that have no acronym paren
   const btM = raw.match(
-    /\bIn\s+(.+?)(?:,\s*pages?|[,.].*?(?:Association|University Press|ACM|ELRA|ICCL|Springer|IEEE))/,
+    /\bIn\s+(.+?)(?:\s*\([A-Z][\w -]*20\d{2}\)|,\s*pages?)/,
   )
   const journal = btM ? btM[1].trim() : ''
 
