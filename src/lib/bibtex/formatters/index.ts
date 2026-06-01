@@ -5,6 +5,9 @@ import { formatAPA }      from './apa'
 import { formatNature }   from './nature'
 import { formatACM }      from './acm'
 import { formatSpringer } from './springer'
+import { formatMLA }      from './mla'
+import { formatChicago }  from './chicago'
+import { formatHarvard }  from './harvard'
 
 // ── Formatter type ─────────────────────────────────────────────────────────────
 
@@ -20,7 +23,9 @@ const FORMATTERS: Partial<Record<CitationStyle, Formatter>> = {
   nature:   formatNature,
   acm:      formatACM,
   springer: formatSpringer,
-  // mla, chicago, harvard — added in PR-5
+  mla:      formatMLA,
+  chicago:  formatChicago,
+  harvard:  formatHarvard,
 }
 
 export function selectFormatter(style: CitationStyle): Formatter {

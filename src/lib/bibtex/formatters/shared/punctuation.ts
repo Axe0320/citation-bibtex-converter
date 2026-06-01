@@ -5,6 +5,12 @@ export const hasTerminalPunct = (s: string): boolean => /[.?!]$/.test(s)
 export const ensureTrailingPeriod = (s: string): string =>
   /[.?"!]"$/.test(s) || s.endsWith('.') ? s : s + '.'
 
+// Title in double quotes with period inside — MLA / Chicago style.
+// Period omitted when title already has terminal punct (?, !, .).
+export function buildTitleQuoted(title: string): string {
+  return hasTerminalPunct(title) ? `"${title}"` : `"${title}."`
+}
+
 // Normalises any DOI representation to https://doi.org/...
 // Handles: "10.xxx/yyy", "doi:10.xxx/yyy", "https://doi.org/10.xxx/yyy"
 export function normalizeDOI(raw: string): string {

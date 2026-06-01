@@ -17,6 +17,27 @@ export function formatAuthorFamilyFirst(a: Author, initialSep = ' '): string {
   return a.suffix ? `${base}, ${a.suffix}` : base
 }
 
+// MLA / Chicago Notes-Bibliography: first author inverted, 2nd normal, 3+ → et al.
+// Does NOT transform given names to initials — uses BibTeX value as-is.
+export function formatAuthorsFirstInverted(authors: Author[]): string {
+  if (!authors.length) return ''
+  const first    = authors[0]
+  const firstStr = first.isOrg ? first.family
+    : first.given ? `${first.family}, ${first.given}` : first.family
+
+  if (authors.length === 1) return firstStr
+
+  if (authors.length === 2) {
+    const s         = authors[1]
+    const secondStr = s.isOrg ? s.family
+      : s.given ? `${s.given} ${s.family}` : s.family
+    return `${firstStr}, and ${secondStr}`
+  }
+
+  // 3+ authors
+  return `${firstStr}, et al.`
+}
+
 // Generic list joining with configurable conjunction and optional serial comma
 export function joinAuthorNames(
   names:       string[],
