@@ -1,0 +1,10 @@
+export type CitationStyle =
+  | 'classic'
+  | 'ieee'
+  | 'apa'
+  | 'acm'
+  | 'nature'
+  | 'springer'
+  | 'mla'
+  | 'chicago'
+  | 'harvard'
