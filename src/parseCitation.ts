@@ -112,7 +112,7 @@ function parseBibEntry(raw: string): BibEntry | null {
   return { type, key, fields }
 }
 
-// ── TXT citation helpers ────────────────────────────────────────────────────────
+// ── Shared TXT helpers (also used by txtToTxt fallback) ───────────────────────
 
 function extractTitle(text: string): string {
   const quoted = text.match(/^[""](.+?)[""][,.]?\s/)
@@ -130,7 +130,7 @@ function extractJournal(text: string): string {
   return ''
 }
 
-function extractDOI(text: string): string {
+export function extractDOI(text: string): string {
   const m = text.match(/\bdoi:\s*([^\s,;]+)/i)
   if (m) return m[1].replace(/\.$/, '').trim()
   const m2 = text.match(/\b(10\.\d{4,}\/[^\s,;]+)/)
@@ -192,51 +192,278 @@ function allowedFields(sel: FieldSelection): Set<string> {
   return s
 }
 
-// Helper: strip trailing comma from last BibTeX field line
 function fixLastLine(lines: string[]): void {
   if (lines.length > 1) {
     lines[lines.length - 1] = lines[lines.length - 1].replace(/,$/, '')
   }
 }
 
-// ── TXT → BibTeX ────────────────────────────────────────────────────────────────
+// ── Format detection ───────────────────────────────────────────────────────────
 
-function txtToBib(raw: string, sel: FieldSelection): ParseResult {
-  const author  = extractAuthor(raw)
-  const title   = extractTitle(raw)
-  const journal = extractJournal(raw)
-  const year    = (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
-  const volume  = (raw.match(/\bvol\.?\s*(\d+)/i) ?? [])[1] ?? ''
-  const number  = (raw.match(/\bno\.?\s*(\d+)/i) ?? [])[1] ?? ''
-  const pages   = (raw.match(/\bpp\.?\s*([\d\-–]+)/i) ?? [])[1] ?? ''
-  const doi     = extractDOI(raw)
+type CiteFormat =
+  | 'ieee'
+  | 'mdpi'
+  | 'springer_nature'
+  | 'springer_apa'
+  | 'acm_acl'
+  | 'elsevier'
+  | 'unknown'
 
-  if (!title && !journal && !year && !doi) {
-    return { ok: false, error: '引用情報を抽出できませんでした。フォーマットを確認してください。' }
+function detectFormat(text: string): CiteFormat {
+  // IEEE: "F. Lastname, ..., "Title," in Journal, vol. X, no. Y, pp. Z"
+  if (/^[A-Z]\. \w/.test(text) && /"/.test(text)) return 'ieee'
+  // MDPI/ACS: "Lastname, F.; Lastname2, F.; ..."
+  if (/^[\w-]+, [A-Z]\.;/.test(text)) return 'mdpi'
+  // ACM/ACL: "Firstname Lastname, ..., Year. Title. In Proceedings..."
+  if (/\. (?:19|20)\d{2}\. .+\. In /.test(text)) return 'acm_acl'
+  // Springer Nature: "Lastname, ..., et al. Title. Journal Vol, Article (Year)."
+  if (/\bet al\./.test(text) && /\((?:19|20)\d{2}\)/.test(text)) return 'springer_nature'
+  // Springer APA: "Lastname, F., Lastname2, F. & Lastname3, F. Title. Journal Vol, Pages (Year)."
+  if (/ & [A-Z][a-z]+, [A-Z]/.test(text) && /\((?:19|20)\d{2}\)/.test(text)) return 'springer_apa'
+  // Elsevier: "Firstname Lastname, ..., Title, Journal, Volume NNN, Year, ArticleNo, ISSN..."
+  if (/\bVolume \d+/.test(text) || /\bISSN\b/.test(text)) return 'elsevier'
+  return 'unknown'
+}
+
+// ── Internal parsed-fields container ──────────────────────────────────────────
+
+interface ParsedFields {
+  author:  string
+  title:   string
+  journal: string
+  year:    string
+  volume:  string
+  number:  string
+  pages:   string
+  doi:     string
+}
+
+// ── Format-specific parsers ────────────────────────────────────────────────────
+
+function parseIEEE(raw: string): ParsedFields {
+  // Author: "F. Lastname, F. Lastname, ..., and F. Lastname," before quoted title
+  const authorM =
+    raw.match(/^((?:[A-Z]\. [\w'-]+(?:,\s+)?)+\s*and [A-Z]\. [\w'-]+),\s*"/) ??
+    raw.match(/^((?:[A-Z]\. [\w'-]+,?\s*)+),\s*"/)
+  const author = authorM ? authorM[1].trim() : ''
+
+  // Title: text inside the first pair of ASCII double quotes
+  const titleM  = raw.match(/"([^"]+)"/)
+  const title   = titleM ? titleM[1].trim() : ''
+
+  // Journal: after "in " before ", vol."
+  const journalM = raw.match(/\bin\s+(.+?),\s*vol\./i)
+
+  return {
+    author,
+    title,
+    journal: journalM ? journalM[1].trim() : '',
+    year:    (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume:  (raw.match(/\bvol\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    number:  (raw.match(/\bno\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    pages:   (raw.match(/\bpp\.?\s*([\d\-–]+)/i) ?? [])[1] ?? '',
+    doi:     extractDOI(raw),
+  }
+}
+
+function parseMDPI(raw: string): ParsedFields {
+  // Authors: "Lastname, F.; Lastname2, F.; LastnameN, F." (semicolon-separated)
+  const authorM = raw.match(/^([\w-]+, [A-Z]\.(?:\w\.)?(?:; [\w-]+, [A-Z]\.(?:\w\.)?)*)\s+[A-Z]/)
+  const authorRaw = authorM ? authorM[1] : ''
+  const author    = authorRaw.replace(/;\s*/g, ' and ')
+
+  // After author block: "Title. Journal Year, Vol, PageOrArticle."
+  const afterAuth = authorRaw ? raw.slice(authorRaw.length).trim() : raw
+  const m = afterAuth.match(/^(.+?)\.\s+(.+?)\s+((?:19|20)\d{2}),\s*(\d+),\s*(\d+)/)
+
+  return {
+    author,
+    title:   m ? m[1].trim() : '',
+    journal: m ? m[2].trim() : '',
+    year:    m ? m[3] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume:  m ? m[4] : '',
+    number:  '',
+    pages:   m ? m[5] : '',
+    doi:     extractDOI(raw),
+  }
+}
+
+function parseSpringerNature(raw: string): ParsedFields {
+  // Authors: everything up to and including "et al."
+  const authorM = raw.match(/^(.+?\bet al\.)\s+/)
+  const author  = authorM ? authorM[1].trim() : ''
+  const rest    = author ? raw.slice(authorM![0].length) : raw
+
+  // "Title. Journal Vol, PagesOrArticle (Year)."
+  const m = rest.match(/^(.+?)\.\s+(.+?)\s+(\d+),\s*([\d–\-]+)\s*\(((?:19|20)\d{2})\)/)
+
+  return {
+    author,
+    title:   m ? m[1].trim() : '',
+    journal: m ? m[2].trim() : '',
+    year:    m ? m[5] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume:  m ? m[3] : '',
+    number:  '',
+    pages:   m ? m[4] : '',
+    doi:     extractDOI(raw),
+  }
+}
+
+function parseSpringerAPA(raw: string): ParsedFields {
+  // Authors: "Lastname, F., Lastname2, F. & LastnameN, F."
+  // Block ends at "& Lastname, F." followed by space + uppercase title start
+  const authorM = raw.match(/^(.+?& [\w-]+, [A-Z]\.(?:[A-Z]\.)?)\s+[A-Z]/)
+  const author  = authorM ? authorM[1].trim() : ''
+  const rest    = author ? raw.slice(author.length).trim() : raw
+
+  // "Title. Journal Vol, Pages (Year)."
+  const m = rest.match(/^(.+?)\.\s+(.+?)\s+(\d+),\s*([\d–\-]+)\s*\(((?:19|20)\d{2})\)/)
+
+  return {
+    author,
+    title:   m ? m[1].trim() : '',
+    journal: m ? m[2].trim() : '',
+    year:    m ? m[5] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume:  m ? m[3] : '',
+    number:  '',
+    pages:   m ? m[4] : '',
+    doi:     extractDOI(raw),
+  }
+}
+
+function parseACMACL(raw: string): ParsedFields {
+  // "Firstname Lastname, ..., and Firstname Lastname. Year. Title. In Proceedings..."
+  const authorM = raw.match(/^(.+?)\.\s+((?:19|20)\d{2})\./)
+  const author  = authorM ? authorM[1].trim() : ''
+  const year    = authorM ? authorM[2] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
+
+  // Title: between "Year. " and ". In "
+  const titleM = raw.match(/\.\s+(?:19|20)\d{2}\.\s+(.+?)\.\s+In\s/)
+  const title  = titleM ? titleM[1].trim() : ''
+
+  // Booktitle/venue: after "In " up to ", pages" (ACL) or publisher/dot (ACM)
+  // Note: no /i flag — requires capital "In" to avoid matching lowercase "in" inside titles
+  const btM = raw.match(
+    /\bIn\s+(.+?)(?:,\s*pages?|[,.].*?(?:Association|University Press|ACM|ELRA|ICCL|Springer|IEEE))/,
+  )
+  const journal = btM ? btM[1].trim() : ''
+
+  // Pages: "pages Z–W" (ACL) or last "NNN–NNN" before DOI/publisher (ACM)
+  const pagesM =
+    raw.match(/\bpages?\s+([\d–\-]+)/) ??
+    raw.match(/,\s*([\d]+[–\-][\d]+)\.?\s*(?:https?|$)/) ??
+    raw.match(/USA,\s*([\d]+[–\-][\d]+)/)
+  const pages = pagesM ? pagesM[1] : ''
+
+  return { author, title, journal, year, volume: '', number: '', pages, doi: extractDOI(raw) }
+}
+
+function parseElsevier(raw: string): ParsedFields {
+  // "Firstname Lastname, Firstname Lastname, ..., Title, Journal, Volume N, Year, Article, ISSN..."
+  // Author segments match "Firstname Lastname" (two capitalised words)
+  const segments  = raw.split(/,\s*/)
+  const nameRe    = /^[A-Z][a-zA-Z]+ [A-Z][a-zA-Z]+$/
+  let lastAuthorIdx = -1
+  for (let i = 0; i < segments.length; i++) {
+    if (nameRe.test(segments[i].trim())) lastAuthorIdx = i
+    else if (lastAuthorIdx >= 0) break
   }
 
-  const warnings = validate({ author, title, year, pages, doi })
-  const key = bibKey(doi, title, year)
-  const lines: string[] = [`@ARTICLE{${key},`]
+  const author  = segments.slice(0, lastAuthorIdx + 1).join(', ')
+  const rest    = segments.slice(lastAuthorIdx + 1)
+  const title   = rest[0]?.trim() ?? ''
+  // Journal: segment after title, stripping any "Volume …" tail
+  const journal = (rest[1] ?? '').replace(/\s*Volume.*/i, '').trim()
 
+  const volM    = raw.match(/\bVolume\s+(\d+)/i)
+  const yearM   = raw.match(/\bVolume\s+\d+,\s*((?:19|20)\d{2})/i)
+  const artM    = raw.match(/\bVolume\s+\d+,\s*(?:19|20)\d{2},\s*(\d+)/)
+
+  return {
+    author,
+    title,
+    journal,
+    year:   yearM ? yearM[1] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume: volM  ? volM[1]  : '',
+    number: '',
+    pages:  artM  ? artM[1]  : '',
+    doi:    extractDOI(raw),
+  }
+}
+
+function parseUnknown(raw: string): ParsedFields {
+  return {
+    author:  extractAuthor(raw),
+    title:   extractTitle(raw),
+    journal: extractJournal(raw),
+    year:    (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume:  (raw.match(/\bvol\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    number:  (raw.match(/\bno\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    pages:   (raw.match(/\bpp\.?\s*([\d\-–]+)/i) ?? [])[1] ?? '',
+    doi:     extractDOI(raw),
+  }
+}
+
+function parseByFormat(raw: string, fmt: CiteFormat): ParsedFields {
+  switch (fmt) {
+    case 'ieee':            return parseIEEE(raw)
+    case 'mdpi':            return parseMDPI(raw)
+    case 'springer_nature': return parseSpringerNature(raw)
+    case 'springer_apa':    return parseSpringerAPA(raw)
+    case 'acm_acl':         return parseACMACL(raw)
+    case 'elsevier':        return parseElsevier(raw)
+    default:                return parseUnknown(raw)
+  }
+}
+
+// ── BibTeX builder (shared by txtToBib) ───────────────────────────────────────
+
+function buildBibTeX(
+  entryType: string,
+  venueKey: 'journal' | 'booktitle',
+  f: ParsedFields,
+  sel: FieldSelection,
+  warnings: ValidationWarning[],
+): ParseResult {
+  const key   = bibKey(f.doi, f.title, f.year)
+  const lines: string[] = [`@${entryType}{${key},`]
   const add = (cond: boolean, line: string) => { if (cond) lines.push(line) }
-  add(sel.author,                         `  author={${author}},`)
-  add(sel.journalOrBooktitle && !!journal, `  journal={${journal}},`)
-  add(sel.title && !!title,               `  title={${title}},`)
-  add(sel.year && !!year,                 `  year={${year}},`)
-  add(sel.volume && !!volume,             `  volume={${volume}},`)
-  add(sel.number && !!number,             `  number={${number}},`)
-  add(sel.pages && !!pages,               `  pages={${pages}},`)
-  add(sel.keywords,                       `  keywords={},`)
-  add(sel.doi,                            `  doi={${doi}},`)
-  add(sel.url,                            `  url={},`)
-  add(sel.abstract,                       `  abstract={},`)
-  add(sel.publisher,                      `  publisher={},`)
-  add(sel.editor,                         `  editor={},`)
+
+  add(sel.author,                                `  author={${f.author}},`)
+  add(sel.journalOrBooktitle && !!f.journal,     `  ${venueKey}={${f.journal}},`)
+  add(sel.title && !!f.title,                    `  title={${f.title}},`)
+  add(sel.year && !!f.year,                      `  year={${f.year}},`)
+  add(sel.volume && !!f.volume,                  `  volume={${f.volume}},`)
+  add(sel.number && !!f.number,                  `  number={${f.number}},`)
+  add(sel.pages && !!f.pages,                    `  pages={${f.pages}},`)
+  add(sel.keywords,                              `  keywords={},`)
+  add(sel.doi,                                   `  doi={${f.doi}},`)
+  add(sel.url,                                   `  url={},`)
+  add(sel.abstract,                              `  abstract={},`)
+  add(sel.publisher,                             `  publisher={},`)
+  add(sel.editor,                                `  editor={},`)
 
   fixLastLine(lines)
   lines.push('}')
   return { ok: true, output: lines.join('\n'), warnings }
+}
+
+// ── TXT → BibTeX ────────────────────────────────────────────────────────────────
+
+function txtToBib(raw: string, sel: FieldSelection): ParseResult {
+  const fmt      = detectFormat(raw)
+  const f        = parseByFormat(raw, fmt)
+
+  if (!f.title && !f.journal && !f.year && !f.doi) {
+    return { ok: false, error: '引用情報を抽出できませんでした。フォーマットを確認してください。' }
+  }
+
+  const warnings  = validate({ author: f.author, title: f.title, year: f.year, pages: f.pages, doi: f.doi })
+  // Conference papers → @INPROCEEDINGS with booktitle
+  const entryType = fmt === 'acm_acl' ? 'INPROCEEDINGS' : 'ARTICLE'
+  const venueKey  = fmt === 'acm_acl' ? 'booktitle'     : 'journal'
+
+  return buildBibTeX(entryType, venueKey, f, sel, warnings)
 }
 
 // ── BibTeX → TXT ────────────────────────────────────────────────────────────────
@@ -333,7 +560,6 @@ function txtToTxt(raw: string, sel: FieldSelection): ParseResult {
   if (sel.year && year)                 parts.push(`${year},`)
   if (sel.doi && doi)                   parts.push(`doi: ${doi}`)
 
-  // Graceful fallback: if nothing could be extracted into parts, return original
   if (parts.length === 0) return { ok: true, output: raw.trim(), warnings }
 
   let out = parts.join(' ').replace(/,\s*$/, '') + '.'

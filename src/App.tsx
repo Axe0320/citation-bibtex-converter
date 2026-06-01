@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
-  convert, detectInputMode, DEFAULT_FIELDS,
+  convert, detectInputMode, DEFAULT_FIELDS, extractDOI,
   type DataType, type FieldSelection, type ValidationWarning,
 } from './parseCitation'
 import { fetchByDOI, resolveDOIFromURL, citationDataToBib } from './fetchCitation'
@@ -189,9 +189,32 @@ export default function App() {
     if (file) handleFile(file)
   }, [handleFile])
 
-  const handleConvert = useCallback(() => {
+  const handleConvert = useCallback(async () => {
     clearErrors()
     setCopied(false)
+
+    // DOI-first: when Text input contains a DOI and target is BibTeX,
+    // fetch from Crossref first for complete metadata, fall back to text parsing
+    if (inputType === 'txt' && outputType === 'bib' && input.trim()) {
+      const doi = extractDOI(input)
+      if (doi) {
+        setIsFetching(true)
+        setOutput('')
+        try {
+          const data = await fetchByDOI(doi)
+          const rawBib = citationDataToBib(data)
+          const result = convert(rawBib, 'bib', outputType, fields)
+          if (!result.ok) setConvertError(result.error ?? '')
+          else { setOutput(result.output ?? ''); setWarnings(result.warnings ?? []) }
+          return
+        } catch {
+          // Crossref failed → fall through to format-specific text parser
+        } finally {
+          setIsFetching(false)
+        }
+      }
+    }
+
     const result = convert(input, inputType, outputType, fields)
     if (!result.ok) {
       if (!input.trim()) setInputError(result.error ?? '')
@@ -279,9 +302,11 @@ export default function App() {
   }, [handleFetch])
 
   const isFetchSource = inputSource === 'doi' || inputSource === 'url'
-  const convertLabel = isFetchSource
-    ? (isFetching ? 'Fetching...' : 'Fetch Citation')
-    : CONVERT_LABEL[`${inputType}-${outputType}`]
+  const convertLabel = isFetching
+    ? (isFetchSource ? 'Fetching...' : 'DOI 取得中...')
+    : isFetchSource
+      ? 'Fetch Citation'
+      : CONVERT_LABEL[`${inputType}-${outputType}`]
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
