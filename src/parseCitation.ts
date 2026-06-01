@@ -204,6 +204,9 @@ type CiteFormat =
   | 'ieee'
   | 'mdpi'
   | 'apa'
+  | 'harvard'
+  | 'vancouver_ama'
+  | 'author_lib'
   | 'springer_nature'
   | 'springer_apa'
   | 'acm_acl'
@@ -215,17 +218,21 @@ function detectFormat(text: string): CiteFormat {
   if (/^[A-Z]\. \w/.test(text) && /"/.test(text)) return 'ieee'
   // MDPI/ACS: "Lastname, F.; Lastname2, F.; ..."
   if (/^[\w-]+, [A-Z]\.;/.test(text)) return 'mdpi'
-  // APA: year in parens immediately followed by period + space + title-start capital
-  //   e.g. "& Kamel, I. (2020). Detection of Bots..."
+  // APA: "(Year). Title" — year in parens followed by period + title capital
   if (/\((?:19|20)\d{2}\)\. [A-Z]/.test(text)) return 'apa'
+  // Author Library: " ; " author separator AND " / " author–title boundary
+  if (/ ; .+ \/ /.test(text)) return 'author_lib'
+  // Harvard: standalone year before single-quoted title — "I 2020, 'Title'"
+  if (/(19|20)\d{2}, '/.test(text)) return 'harvard'
+  // Vancouver / AMA: "Vol(Issue):Pages" pattern
+  if (/\d+\(\d+\):\d+/.test(text)) return 'vancouver_ama'
   // ACM/ACL/Chicago: "Lastname. Year. Title[. In Proceedings]..."
-  //   also catches ACM journal articles and Chicago style (quoted title)
   if (/\. (?:19|20)\d{2}\. .+\./.test(text)) return 'acm_acl'
-  // Springer Nature: "Lastname, ..., et al. Title. Journal Vol, Article (Year)."
+  // Springer Nature: "... et al. Title. Journal Vol, Article (Year)."
   if (/\bet al\./.test(text) && /\((?:19|20)\d{2}\)/.test(text)) return 'springer_nature'
-  // Springer APA: "Lastname, F., Lastname2, F. & Lastname3, F. Title. Journal Vol, Pages (Year)."
+  // Springer APA: "... & Lastname, F. Title. Journal Vol, Pages (Year)."
   if (/ & [A-Z][a-z]+, [A-Z]/.test(text) && /\((?:19|20)\d{2}\)/.test(text)) return 'springer_apa'
-  // Elsevier: "Firstname Lastname, ..., Title, Journal, Volume NNN, Year, ArticleNo, ISSN..."
+  // Elsevier: "..., Volume NNN, Year, ArticleNo, ISSN..."
   if (/\bVolume \d+/.test(text) || /\bISSN\b/.test(text)) return 'elsevier'
   return 'unknown'
 }
@@ -367,6 +374,80 @@ function parseAPA(raw: string): ParsedFields {
   return { author, title, journal, year, volume, number, pages, doi: extractDOI(raw) }
 }
 
+function parseHarvard(raw: string): ParsedFields {
+  // "Lastname, F, ..., & LastnameN, F Year, 'Title', Journal, vol. V, no. N, Article."
+  const yM      = raw.match(/\b((19|20)\d{2}),\s*'/)
+  const year    = yM ? yM[1] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
+  const author  = yM ? raw.slice(0, yM.index!).trim().replace(/[,\s]+$/, '') : ''
+
+  const tM      = raw.match(/'([^']+)'/)
+  const title   = tM ? tM[1].trim() : ''
+
+  const after   = tM ? raw.slice(raw.indexOf(tM[0]) + tM[0].length) : ''
+  const jM      = after.match(/^,\s*([^,]+)/)
+
+  return {
+    author,
+    title,
+    journal:  jM ? jM[1].trim() : '',
+    year,
+    volume:   (raw.match(/\bvol\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    number:   (raw.match(/\bno\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    pages:    '',
+    doi:      extractDOI(raw),
+  }
+}
+
+function parseVancouverAMA(raw: string): ParsedFields {
+  // Vancouver: "Lastname F, Lastname2 D. Title. Journal. Year Mon;Vol(Issue):Pages."
+  // AMA:       "Lastname F, Lastname2 F. Title. Journal. Year; Vol(Issue):Pages."
+  // Both split cleanly by ". " into [authors, title, journal, year/vol info]
+  const parts   = raw.split(/\.\s+/)
+  const author  = parts[0]?.trim() ?? ''
+  const title   = parts[1]?.trim() ?? ''
+  const journal = parts[2]?.trim() ?? ''
+
+  const yearM   = (parts[3] ?? '').match(/^((19|20)\d{2})/)
+  const year    = yearM ? yearM[1] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
+
+  const vipM    = raw.match(/(\d+)\((\d+)\):(\d+)/)
+
+  return {
+    author,
+    title,
+    journal,
+    year,
+    volume:   vipM ? vipM[1] : '',
+    number:   vipM ? vipM[2] : '',
+    pages:    vipM ? vipM[3] : '',
+    doi:      extractDOI(raw),
+  }
+}
+
+function parseAuthorLib(raw: string): ParsedFields {
+  // "Lastname, Firstname ; Lastname2, Firstname2 ; ... et al. / Title : Subtitle. In: Journal. Year ; Vol. V, No. N."
+  const slashIdx = raw.indexOf(' / ')
+  const author   = slashIdx >= 0
+    ? raw.slice(0, slashIdx).replace(/\s*;\s*/g, ' and ').trim()
+    : ''
+
+  const rest    = slashIdx >= 0 ? raw.slice(slashIdx + 3) : raw
+  const tM      = rest.match(/^(.+?)\.\s+In:/)
+  const title   = tM ? tM[1].replace(/ : /g, ': ').trim() : ''
+  const jM      = rest.match(/\bIn:\s+(.+?)\./)
+
+  return {
+    author,
+    title,
+    journal:  jM ? jM[1].trim() : '',
+    year:     (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? '',
+    volume:   (raw.match(/\bVol\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    number:   (raw.match(/\bNo\.?\s*(\d+)/i) ?? [])[1] ?? '',
+    pages:    '',
+    doi:      extractDOI(raw),
+  }
+}
+
 function parseACMACL(raw: string): ParsedFields {
   // Handles: ACM/ACL conference, ACM journal, Chicago (quoted title)
   // Common anchor: "Lastname. Year. ..."
@@ -463,6 +544,9 @@ function parseByFormat(raw: string, fmt: CiteFormat): ParsedFields {
     case 'ieee':            return parseIEEE(raw)
     case 'mdpi':            return parseMDPI(raw)
     case 'apa':             return parseAPA(raw)
+    case 'harvard':         return parseHarvard(raw)
+    case 'vancouver_ama':   return parseVancouverAMA(raw)
+    case 'author_lib':      return parseAuthorLib(raw)
     case 'springer_nature': return parseSpringerNature(raw)
     case 'springer_apa':    return parseSpringerAPA(raw)
     case 'acm_acl':         return parseACMACL(raw)
