@@ -203,6 +203,7 @@ function fixLastLine(lines: string[]): void {
 type CiteFormat =
   | 'ieee'
   | 'mdpi'
+  | 'apa'
   | 'springer_nature'
   | 'springer_apa'
   | 'acm_acl'
@@ -214,8 +215,12 @@ function detectFormat(text: string): CiteFormat {
   if (/^[A-Z]\. \w/.test(text) && /"/.test(text)) return 'ieee'
   // MDPI/ACS: "Lastname, F.; Lastname2, F.; ..."
   if (/^[\w-]+, [A-Z]\.;/.test(text)) return 'mdpi'
-  // ACM/ACL: "Firstname Lastname, ..., Year. Title. In Proceedings..."
-  if (/\. (?:19|20)\d{2}\. .+\. In /.test(text)) return 'acm_acl'
+  // APA: year in parens immediately followed by period + space + title-start capital
+  //   e.g. "& Kamel, I. (2020). Detection of Bots..."
+  if (/\((?:19|20)\d{2}\)\. [A-Z]/.test(text)) return 'apa'
+  // ACM/ACL/Chicago: "Lastname. Year. Title[. In Proceedings]..."
+  //   also catches ACM journal articles and Chicago style (quoted title)
+  if (/\. (?:19|20)\d{2}\. .+\./.test(text)) return 'acm_acl'
   // Springer Nature: "Lastname, ..., et al. Title. Journal Vol, Article (Year)."
   if (/\bet al\./.test(text) && /\((?:19|20)\d{2}\)/.test(text)) return 'springer_nature'
   // Springer APA: "Lastname, F., Lastname2, F. & Lastname3, F. Title. Journal Vol, Pages (Year)."
@@ -333,29 +338,75 @@ function parseSpringerAPA(raw: string): ParsedFields {
   }
 }
 
+function parseAPA(raw: string): ParsedFields {
+  // "Lastname, F., ..., & LastnameN, F. (Year). Title. Journal, Vol(Issue), PageOrArticle."
+  const yM     = raw.match(/\(((?:19|20)\d{2})\)\./)
+  const year   = yM ? yM[1] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
+  const author = yM ? raw.slice(0, yM.index!).trim().replace(/[.,]\s*$/, '') : ''
+  const after  = yM ? raw.slice(yM.index! + yM[0].length).trim() : raw
+
+  // Title: first sentence (up to ". JournalStart")
+  const tM    = after.match(/^(.+?)\.\s+([A-Z])/)
+  const title = tM ? tM[1].trim() : ''
+  const rest  = tM ? after.slice(tM[0].length - tM[2].length) : after
+
+  // Journal: text up to the first comma
+  const jM      = rest.match(/^([^,]+)/)
+  const journal = jM ? jM[1].trim() : ''
+
+  // Volume and number from "57(4)" or fallback to first number after comma
+  const volNumM = rest.match(/,\s*(\d+)\((\d+)\)/)
+  const volM    = volNumM ? null : rest.match(/,\s*(\d+),/)
+  const volume  = volNumM ? volNumM[1] : (volM ? volM[1] : '')
+  const number  = volNumM ? volNumM[2] : ''
+
+  // Pages / article number: last number before end of string
+  const pM    = rest.match(/,\s*([\d]+)\.?\s*$/)
+  const pages = pM ? pM[1] : ''
+
+  return { author, title, journal, year, volume, number, pages, doi: extractDOI(raw) }
+}
+
 function parseACMACL(raw: string): ParsedFields {
-  // "Firstname Lastname, ..., and Firstname Lastname. Year. Title. In Proceedings..."
+  // Handles: ACM/ACL conference, ACM journal, Chicago (quoted title)
+  // Common anchor: "Lastname. Year. ..."
   const authorM = raw.match(/^(.+?)\.\s+((?:19|20)\d{2})\./)
   const author  = authorM ? authorM[1].trim() : ''
   const year    = authorM ? authorM[2] : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
 
-  // Title: between "Year. " and ". In "
-  const titleM = raw.match(/\.\s+(?:19|20)\d{2}\.\s+(.+?)\.\s+In\s/)
-  const title  = titleM ? titleM[1].trim() : ''
+  const afterYear = authorM ? raw.slice(authorM.index! + authorM[0].length) : raw
+  const isConf    = /\bIn\s/.test(afterYear)
 
-  // Booktitle/venue: after "In " up to ", pages" (ACL) or publisher/dot (ACM)
-  // Stop at "(CONF YEAR)" acronym — catches ACM's "(LCTES 2024)" and LREC's "(LREC-COLING 2024)"
-  // Fallback: stop at ", pages" for ACL-style venues that have no acronym paren
-  const btM = raw.match(
-    /\bIn\s+(.+?)(?:\s*\([A-Z][\w -]*20\d{2}\)|,\s*pages?)/,
-  )
-  const journal = btM ? btM[1].trim() : ''
+  let title = '', journal = ''
 
-  // Pages: "pages Z–W" (ACL) or last "NNN–NNN" before DOI/publisher (ACM)
+  if (isConf) {
+    const tM = raw.match(/\.\s+(?:19|20)\d{2}\.\s+(.+?)\.\s+In\s/)
+    title = tM ? tM[1].trim() : ''
+    // Stop at "(CONF YEAR)" or ", pages"
+    const btM = raw.match(/\bIn\s+(.+?)(?:\s*\([A-Z][\w -]*20\d{2}\)|,\s*pages?)/)
+    journal = btM ? btM[1].trim() : ''
+  } else {
+    // Chicago: title is in double quotes
+    const quotedTM = raw.match(/\.\s+(?:19|20)\d{2}\.\s+"([^"]+)"/)
+    if (quotedTM) {
+      title = quotedTM[1].trim()
+      // Journal: first capitalised word-sequence before the volume number
+      const jM = raw.match(/"[^"]+"\s+([A-Z][^,\d]+?)\s+\d+/)
+      journal = jM ? jM[1].trim() : ''
+    } else {
+      // ACM journal: "Title. Journal Vol, ..."
+      const tM = raw.match(/\.\s+(?:19|20)\d{2}\.\s+(.+?)\.\s+[A-Z]/)
+      title = tM ? tM[1].trim() : ''
+      const jM = raw.match(/(?:19|20)\d{2}\.\s+.+?\.\s+(.+?)\s+\d+,/)
+      journal = jM ? jM[1].trim() : ''
+    }
+  }
+
   const pagesM =
     raw.match(/\bpages?\s+([\d–\-]+)/) ??
     raw.match(/,\s*([\d]+[–\-][\d]+)\.?\s*(?:https?|$)/) ??
-    raw.match(/USA,\s*([\d]+[–\-][\d]+)/)
+    raw.match(/USA,\s*([\d]+[–\-][\d]+)/) ??
+    raw.match(/([\d]+[–\-][\d]+)/)
   const pages = pagesM ? pagesM[1] : ''
 
   return { author, title, journal, year, volume: '', number: '', pages, doi: extractDOI(raw) }
@@ -411,6 +462,7 @@ function parseByFormat(raw: string, fmt: CiteFormat): ParsedFields {
   switch (fmt) {
     case 'ieee':            return parseIEEE(raw)
     case 'mdpi':            return parseMDPI(raw)
+    case 'apa':             return parseAPA(raw)
     case 'springer_nature': return parseSpringerNature(raw)
     case 'springer_apa':    return parseSpringerAPA(raw)
     case 'acm_acl':         return parseACMACL(raw)
@@ -463,8 +515,10 @@ function txtToBib(raw: string, sel: FieldSelection): ParseResult {
 
   const warnings  = validate({ author: f.author, title: f.title, year: f.year, pages: f.pages, doi: f.doi })
   // Conference papers → @INPROCEEDINGS with booktitle
-  const entryType = fmt === 'acm_acl' ? 'INPROCEEDINGS' : 'ARTICLE'
-  const venueKey  = fmt === 'acm_acl' ? 'booktitle'     : 'journal'
+  // Conference if acm_acl AND text contains "In Proceedings" / "In " keyword
+  const isConf    = fmt === 'acm_acl' && /\bIn\s/.test(raw)
+  const entryType = isConf ? 'INPROCEEDINGS' : 'ARTICLE'
+  const venueKey  = isConf ? 'booktitle'     : 'journal'
 
   return buildBibTeX(entryType, venueKey, f, sel, warnings)
 }
