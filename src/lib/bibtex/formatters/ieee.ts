@@ -1,15 +1,9 @@
 import type { FieldSelection } from '../../../parseCitation'
 import type { Author, NormalizedEntry } from '../types'
+import { toInitials, joinAuthorNames } from './shared'
+import { hasTerminalPunct, ensureTrailingPeriod } from './shared'
 
 // ── Author formatting ──────────────────────────────────────────────────────────
-
-function toInitials(given: string): string {
-  return given
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(part => `${part[0].toUpperCase()}.`)
-    .join(' ')
-}
 
 function formatAuthorIEEE(a: Author): string {
   if (a.isOrg) return a.family
@@ -19,19 +13,14 @@ function formatAuthorIEEE(a: Author): string {
 }
 
 function formatAuthorsIEEE(authors: Author[]): string {
-  const f = authors.map(formatAuthorIEEE)
-  if (f.length === 0) return ''
-  if (f.length === 1) return f[0]
-  if (f.length === 2) return `${f[0]} and ${f[1]}`
-  return `${f.slice(0, -1).join(', ')}, and ${f[f.length - 1]}`
+  return joinAuthorNames(authors.map(formatAuthorIEEE), 'and', true)
 }
 
 // ── Title formatting ───────────────────────────────────────────────────────────
 
 function buildTitleIEEE(title: string, hasPost: boolean): string {
-  const hasTerminal = /[?!]$/.test(title)
-  if (hasPost) return hasTerminal ? `"${title}"` : `"${title},"`
-  return hasTerminal ? `"${title}"` : `"${title}."`
+  if (hasPost) return hasTerminalPunct(title) ? `"${title}"` : `"${title},"`
+  return hasTerminalPunct(title) ? `"${title}"` : `"${title}."`
 }
 
 // ── Post-title segments (venue, year, doi) ─────────────────────────────────────
@@ -92,11 +81,6 @@ function buildPostIEEE(entry: NormalizedEntry, sel: FieldSelection): string[] {
 
 // ── Assembly ───────────────────────────────────────────────────────────────────
 
-function ensureTrailingPeriod(s: string): string {
-  if (/[.?"!]"$/.test(s) || s.endsWith('.')) return s
-  return s + '.'
-}
-
 function assembleBook(
   authorStr: string | null,
   titleStr:  string | null,
@@ -128,7 +112,7 @@ function assembleNonBook(
   let result = parts[0]
   for (let i = 1; i < parts.length; i++) {
     const prev = parts[i - 1]
-    // After "Title," / "Title?" / "Title!" — title's punctuation acts as separator
+    // After "Title," / "Title?" / "Title!" — title's own punct acts as separator
     if (/[,?!]"$/.test(prev)) {
       result += ` ${parts[i]}`
     } else {
@@ -153,8 +137,8 @@ export function formatIEEE(entry: NormalizedEntry, sel: FieldSelection): string 
   let titleSeg: string | null = null
   if (sel.title && entry.title) {
     titleSeg = isBook
-      ? entry.title                              // book: no quotes
-      : buildTitleIEEE(entry.title, !!postStr)   // others: quoted with conditional punct
+      ? entry.title
+      : buildTitleIEEE(entry.title, !!postStr)
   }
 
   if (!authorStr && !titleSeg && !postStr) return ''
