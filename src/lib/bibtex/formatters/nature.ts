@@ -49,10 +49,12 @@ function buildVenueNature(entry: NormalizedEntry, sel: FieldSelection): string |
   }
 
   if (entry.type === 'book') {
-    if (!sel.publisher) return null
+    // year is independent of publisher — show even when publisher=OFF
     const parts: string[] = []
-    if (entry.publisher) parts.push(entry.publisher)
-    if (entry.address)   parts.push(entry.address)
+    if (sel.publisher && entry.publisher) {
+      parts.push(entry.publisher)
+      if (entry.address) parts.push(entry.address)
+    }
     let result = parts.join(', ')
     if (year) result = result ? `${result} (${year})` : `(${year})`
     return result ? result + '.' : null

@@ -17,9 +17,12 @@ export function formatAuthorFamilyFirst(a: Author, initialSep = ' '): string {
   return a.suffix ? `${base}, ${a.suffix}` : base
 }
 
-// MLA / Chicago Notes-Bibliography: first author inverted, 2nd normal, 3+ → et al.
+// MLA / Chicago Notes-Bibliography: first author inverted, rest normal.
+// etAlThreshold: authors.length >= threshold → "et al."
+//   MLA 9th:       threshold=3  (3+  authors → et al.)
+//   Chicago 17th:  threshold=4  (4+  authors → et al., 3 listed in full)
 // Does NOT transform given names to initials — uses BibTeX value as-is.
-export function formatAuthorsFirstInverted(authors: Author[]): string {
+export function formatAuthorsFirstInverted(authors: Author[], etAlThreshold = 3): string {
   if (!authors.length) return ''
   const first    = authors[0]
   const firstStr = first.isOrg ? first.family
@@ -34,7 +37,15 @@ export function formatAuthorsFirstInverted(authors: Author[]): string {
     return `${firstStr}, and ${secondStr}`
   }
 
-  // 3+ authors
+  if (authors.length < etAlThreshold) {
+    // List all authors (between 3 and threshold-1)
+    const rest = authors.slice(1).map(s =>
+      s.isOrg ? s.family : s.given ? `${s.given} ${s.family}` : s.family,
+    )
+    return `${firstStr}, ${rest.slice(0, -1).join(', ')}, and ${rest[rest.length - 1]}`
+  }
+
+  // threshold+ authors → et al.
   return `${firstStr}, et al.`
 }
 

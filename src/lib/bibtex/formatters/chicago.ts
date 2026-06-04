@@ -70,8 +70,9 @@ function buildVenueChicago(entry: NormalizedEntry, sel: FieldSelection): string 
 
 export function formatChicago(entry: NormalizedEntry, sel: FieldSelection): string {
   // Chicago NB: "Author. "Title." Journal Vol, no. N (Year): Pages. DOI"
+  // Chicago 17th: et al. for 4+ authors (1-3 listed in full)
   const authorStr = (sel.author && entry.authors.length > 0)
-    ? formatAuthorsFirstInverted(entry.authors)
+    ? formatAuthorsFirstInverted(entry.authors, 4)
     : null
 
   const titleStr = (sel.title && entry.title) ? entry.title : null
@@ -82,7 +83,13 @@ export function formatChicago(entry: NormalizedEntry, sel: FieldSelection): stri
 
   const parts: string[] = []
   if (authorStr) parts.push(ensureTrailingPeriod(authorStr))
-  if (titleStr)  parts.push(buildTitleQuoted(titleStr))
+  if (titleStr) {
+    // Chicago: article/inproc titles in quotes; book titles NOT quoted (same rule as MLA)
+    const titleSeg = entry.type === 'book'
+      ? ensureTrailingPeriod(titleStr)
+      : buildTitleQuoted(titleStr)
+    parts.push(titleSeg)
+  }
   if (venueStr)  parts.push(venueStr)
   if (doiStr)    parts.push(doiStr)
 
