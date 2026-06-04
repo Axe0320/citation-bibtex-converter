@@ -4,6 +4,8 @@ import {
   type DataType, type FieldSelection, type ValidationWarning,
 } from './parseCitation'
 import { fetchByDOI, resolveDOIFromURL, citationDataToBib } from './fetchCitation'
+import { formatBibTeX } from './lib/bibtex/bibToTxt'
+import type { CitationStyle } from './lib/bibtex/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -127,6 +129,7 @@ export default function App() {
   const [fileName, setFileName]         = useState('')
   const [isFetching, setIsFetching]     = useState(false)
   const [fields, setFields]             = useState<FieldSelection>(DEFAULT_FIELDS)
+  const [citationStyle, setCitationStyle] = useState<CitationStyle>('classic')
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Toast auto-hide
@@ -215,6 +218,21 @@ export default function App() {
       }
     }
 
+    // Citation Style mode: bib→txt with non-classic style → formatBibTeX()
+    // Classic: falls through to convert() below — regression zero guaranteed
+    if (inputType === 'bib' && outputType === 'txt' && citationStyle !== 'classic') {
+      const result = formatBibTeX(input.trim(), citationStyle, fields)
+      if (!result.ok) {
+        if (!input.trim()) setInputError(result.error ?? '')
+        else setConvertError(result.error ?? '')
+        setOutput('')
+        return
+      }
+      setOutput(result.output ?? '')
+      setWarnings(result.warnings ?? [])
+      return
+    }
+
     const result = convert(input, inputType, outputType, fields)
     if (!result.ok) {
       if (!input.trim()) setInputError(result.error ?? '')
@@ -224,7 +242,7 @@ export default function App() {
     }
     setOutput(result.output ?? '')
     setWarnings(result.warnings ?? [])
-  }, [input, inputType, outputType, fields, clearErrors])
+  }, [input, inputType, outputType, citationStyle, fields, clearErrors])
 
   const handleFetch = useCallback(async () => {
     clearErrors()
@@ -388,6 +406,32 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* Citation Style selector — bib→txt mode only */}
+          {inputType === 'bib' && outputType === 'txt' && (
+            <div className="citation-style-row">
+              <span className="citation-style-label">Citation Style</span>
+              <select
+                className="citation-style-select"
+                value={citationStyle}
+                onChange={e => {
+                  setCitationStyle(e.target.value as CitationStyle)
+                  setOutput('')
+                  clearErrors()
+                }}
+              >
+                <option value="classic">Classic</option>
+                <option value="ieee">IEEE</option>
+                <option value="apa">APA (7th)</option>
+                <option value="acm">ACM</option>
+                <option value="nature">Nature</option>
+                <option value="springer">Springer / LNCS</option>
+                <option value="mla">MLA</option>
+                <option value="chicago">Chicago</option>
+                <option value="harvard">Harvard</option>
+              </select>
+            </div>
+          )}
 
           {/* Input section */}
           <div>
