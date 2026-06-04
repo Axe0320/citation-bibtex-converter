@@ -14,12 +14,14 @@
 
 論文執筆・文献管理の現場では、引用サイトによって「Cite This」の形式が異なったり、BibTeX しかない・TXT しかない・DOI の取得が面倒といった問題が頻繁に発生します。本プロジェクトは、**自分の研究体験から着想した**この非効率を解消するための Web アプリです。
 
-- 引用テキスト (TXT) を入力するだけで BibTeX を生成
-- BibTeX から必要なフィールドだけを抽出・整形
+- 引用テキスト (TXT) を入力するだけで BibTeX を生成（10+ 形式対応）
+- BibTeX から **IEEE / APA / ACM / Nature / Springer / MLA / Chicago / Harvard** 形式に変換
 - DOI または論文 URL を貼り付けるだけで自動的に引用情報を取得
 - `.bib` / `.txt` ファイルのアップロードにも対応
 
 バックエンド・データベース不要。ブラウザだけで完結します。
+
+**公開 URL：** https://citation-bibtex-converter.vercel.app/
 
 ---
 
@@ -27,16 +29,14 @@
 
 千葉工業大学 2026年前期「Web3・AI概論」の第6回課題（テーマ：プロトタイプ v1）として作成しました。
 
-**解決したかった問題：**  
+**解決したかった問題：**
 論文を書くとき、引用元によって形式がバラバラで毎回手作業が発生していた。IEEE は `Cite This` の TXT 形式しか出ない、ScienceDirect は BibTeX があるが不完全、ACM は形式が独自…。一つの統一ツールで「とにかく BibTeX にする」「とにかく TXT にする」が完結してほしかった。
 
-**対象ユーザー：**  
+**対象ユーザー：**
 論文執筆中の学部生・大学院生・研究者。LaTeX / Overleaf ユーザー、または Zotero 等の文献管理ツールへのインポートをしたい人。
 
-**一言紹介：**  
+**一言紹介：**
 DOI か URL を貼るだけで BibTeX が手に入る、研究者のための引用変換ツール。
-
-**公開 URL：** `(https://citation-bibtex-converter.vercel.app/)`
 
 ---
 
@@ -44,79 +44,111 @@ DOI か URL を貼るだけで BibTeX が手に入る、研究者のための引
 
 ```mermaid
 flowchart TD
+    classDef input   fill:#6C63FF,color:#fff,stroke:#4a44cc
+    classDef api     fill:#F59E0B,color:#fff,stroke:#D97706
+    classDef parse   fill:#10B981,color:#fff,stroke:#059669
+    classDef format  fill:#EF4444,color:#fff,stroke:#DC2626
+    classDef out     fill:#3B82F6,color:#fff,stroke:#2563EB
+
     subgraph IN["① 入力ソース（4タブ）"]
-        T[Text\n引用テキスト / BibTeX]
-        D[DOI\n10.xxxx/xxxxx]
-        U[URL\n論文ページURL]
-        F[File\n.bib / .txt]
+        T([Text\nBibTeX / 引用TXT]):::input
+        D([DOI\n10.xxxx/xxxxx]):::input
+        U([URL\n論文ページ]):::input
+        F([File\n.bib / .txt]):::input
     end
 
     subgraph RESOLVE["② DOI 解決"]
-        RX["URL regex\ndoi.org / ACM / Springer"]
-        META["HTML meta tag fetch\ncitation_doi / prism.doi"]
-        PROXY["CORS Proxy\ncorsproxy.io → allorigins.win"]
-        CR["Crossref REST API\napi.crossref.org"]
+        RX[URL 正規表現\ndoi.org / ACM / Springer]:::api
+        META[HTML メタタグ\ncitation_doi / prism.doi]:::api
+        PROXY[CORS プロキシ\ncorsproxy.io → allorigins.win]:::api
+        CR[Crossref REST API\napi.crossref.org]:::api
     end
 
-    subgraph PARSE["③ 変換処理"]
-        AD["Auto Detect\nbib / txt 自動判定"]
-        CV["convert()\ntxt→bib / bib→txt\nbib→bib / txt→txt"]
-        FS["Field Selector\n16フィールド選択"]
+    subgraph CONVERT["③ 変換エンジン"]
+        DET[detectFormat\n10形式自動判定\nIEEE / MDPI / APA / ACL / Elsevier 等]:::parse
+        T2B[TXT → BibTeX\nDOI-first + 形式別パーサー]:::parse
+        B2B[BibTeX ⇄ BibTeX / TXT\nField Selector 16項目]:::parse
     end
 
-    subgraph OUT["④ 出力"]
-        OP["Output\nBibTeX / TXT"]
-        CP["Copy to Clipboard"]
-        DL["Download\n.bib / .txt"]
+    subgraph STYLE["④ Citation Style Formatter（新機能）"]
+        NORM[normalizeBibEntry\nAuthor 分割・pages 正規化]:::format
+        S1([IEEE]):::format
+        S2([APA 7th]):::format
+        S3([ACM]):::format
+        S4([Nature]):::format
+        S5([Springer / LNCS]):::format
+        S6([MLA]):::format
+        S7([Chicago]):::format
+        S8([Harvard]):::format
     end
 
-    T --> AD
-    F --> AD
+    subgraph OUT["⑤ 出力"]
+        OP[BibTeX / TXT 出力]:::out
+        CP([Copy to Clipboard]):::out
+        DL([Download .bib / .txt]):::out
+    end
+
     D --> CR
     U --> RX
-    RX -->|"DOI あり"| CR
+    RX -->|"DOI 抽出成功"| CR
     RX -->|"DOI なし"| META
     META --> PROXY
-    PROXY -->|"DOI 取得成功"| CR
-    PROXY -->|"失敗"| ERR["エラー表示\n(graceful fallback)"]
-    CR --> AD
-    AD --> CV
-    CV --> FS
-    FS --> OP
-    OP --> CP
-    OP --> DL
+    PROXY -->|"成功"| CR
+    PROXY -->|"失敗 (15s timeout)"| ERR([エラー表示]):::api
+    T & F --> DET --> T2B
+    CR --> T2B --> OP
+    T & F --> B2B --> OP
+    T & F --> NORM
+    NORM --> S1 & S2 & S3 & S4
+    NORM --> S5 & S6 & S7 & S8
+    S1 & S2 & S3 & S4 & S5 & S6 & S7 & S8 --> OP
+    OP --> CP & DL
 ```
 
 ---
 
 ## 主な機能と特徴
 
-1. **Citation ⇄ BibTeX 相互変換**  
-   TXT→BibTeX / BibTeX→TXT / BibTeX→BibTeX（フィールド絞り込み）/ TXT→TXT の 4 モードに対応。入力内容から `@article` 等を検出してモードを自動判定します。
+1. **Citation ⇄ BibTeX 相互変換**
+   TXT→BibTeX / BibTeX→TXT / BibTeX→BibTeX / TXT→TXT の 4 モードに対応。入力内容から `@article` 等を検出してモードを自動判定します。
 
-2. **DOI / URL Citation Fetch**  
-   DOI（`10.xxxx/xxxxx`）または doi.org リンクを入力すると、Crossref REST API から著者・タイトル・巻号・ページ・DOI を取得して BibTeX を自動生成します。ACM や Springer の URL にはパス内の DOI を正規表現で検出します。
+2. **TXT 引用フォーマット 10+ 形式対応**
+   IEEE / MDPI/ACS / APA / Harvard / Vancouver / AMA / Author Library / Springer / Chicago / Elsevier など主要な引用形式を自動識別し、形式別パーサーで正確に BibTeX を生成します。
 
-3. **URL からの DOI 自動解決**  
-   DOI が URL に含まれない場合（IEEE 等）は、ページの HTML メタタグ（`citation_doi`）をフェッチして DOI を取得します。直接フェッチが CORS でブロックされる場合は CORS プロキシ 2 段階にフォールバックし、全失敗時は 15 秒でタイムアウトして分かりやすいエラーを表示します。
+3. **Citation Style Formatter（BibTeX → TXT）**
+   BibTeX 入力から 8 種類の引用スタイルで出力を生成します。FieldSelector と組み合わせた style-aware free formatting により、選択したフィールドのみで自然な引用文を出力します。
 
-4. **Upload & Auto Detect**  
+   | スタイル | 著者形式例 | 特徴 |
+   |---|---|---|
+   | **IEEE** | `J. A. Smith, M. K. Lee` | `vol./no./pp.`、DOI `doi:` 形式 |
+   | **APA (7th)** | `Smith, J. A., & Lee, M. K.` | `(Year).` 著者直後 |
+   | **ACM** | `John A. Smith and Mary K. Lee` | フルネーム、Year→Title 順 |
+   | **Nature** | `Smith, J. A. & Lee, M. K.` | Issue 番号なし、Year 末尾括弧 |
+   | **Springer / LNCS** | `Smith, J.A., Lee, M.K.:` | イニシャル間スペースなし、コロン |
+   | **MLA** | `Smith, John A., et al.` | `"Title."` 引用符、Year→Pages 順 |
+   | **Chicago** | `Smith, John A., Mary K. Lee, and …` | 3著者まで全列記、4+でet al. |
+   | **Harvard** | `Smith, J. A. & Lee, M. K.` | `'Title'` シングルクオート、Year 無括弧 |
+
+4. **DOI / URL Citation Fetch**
+   DOI（`10.xxxx/xxxxx`）または doi.org リンクを入力すると、Crossref REST API から著者・タイトル・巻号・ページを取得して BibTeX を自動生成します。
+
+5. **Upload & Auto Detect**
    `.bib` / `.txt` ファイルをアップロードまたはドラッグ&ドロップすると、内容から入力タイプを自動判定します。
 
-5. **Field Selector**  
-   出力に含めるフィールドをチェックボックスで選択できます（author / title / journal / doi / abstract 等 16 項目）。「abstract と keywords は除いて出力したい」といった用途に対応します。
+6. **Field Selector**
+   出力に含めるフィールドをチェックボックスで選択できます（author / title / journal / doi / abstract 等 16 項目）。
 
-6. **Validation Warning**  
-   著者・タイトル・発行年・ページ・DOI の欠損を変換後に警告表示します。不完全な引用データに気づけます。
+7. **Validation Warning**
+   著者・タイトル・発行年・ページ・DOI の欠損を変換後に警告表示します。
 
-7. **Copy / Download**  
+8. **Copy / Download**
    出力テキストをクリップボードにコピー、または `.bib` / `.txt` ファイルとしてダウンロードできます。
 
 ---
 
 ## Screenshot
 
-> **Add screenshot here.**  
+> **Add screenshot here.**
 > `docs/screenshot.png` を配置後、以下のコメントアウトを解除してください。
 
 <!-- ![App Screenshot](docs/screenshot.png) -->
@@ -144,7 +176,7 @@ flowchart TD
 - **Citation Metadata**: Crossref REST API（無料・登録不要）
 - **Styling**: Plain CSS (CSS Custom Properties、Tailwind 等不使用)
 - **AI Assistant**: Claude Code (Anthropic) / Antigravity
-- **Deployment**: Vercel（予定）
+- **Deployment**: Vercel
 
 ---
 
@@ -154,25 +186,41 @@ flowchart TD
 citation-bibtex-converter/
 ├── src/
 │   ├── App.tsx              # メインコンポーネント・状態管理・UI全体
-│   ├── parseCitation.ts     # 引用変換ロジック（TXT ⇄ BibTeX、フィールド制御）
-│   ├── fetchCitation.ts     # DOI/URL 解決・Crossref API 連携・CORS プロキシ
+│   ├── parseCitation.ts     # TXT ⇄ BibTeX 変換ロジック（10+ 形式検出）
+│   ├── fetchCitation.ts     # DOI/URL 解決・Crossref API・CORS プロキシ
 │   ├── index.css            # スタイル定義（CSS カスタムプロパティ）
-│   └── main.tsx             # アプリエントリーポイント
-├── index.html               # Vite HTML テンプレート
-├── vite.config.ts           # Vite 設定
-├── tsconfig.json            # TypeScript 設定
+│   ├── main.tsx             # アプリエントリーポイント
+│   └── lib/
+│       └── bibtex/
+│           ├── types.ts              # CitationStyle / Author / NormalizedEntry 型
+│           ├── parser/               # BibTeX パーサー（brace-depth aware）
+│           ├── normalize/            # BibEntry → NormalizedEntry 正規化
+│           │   ├── parseAuthors.ts   #   著者分割（複合姓・suffix・組織名）
+│           │   └── normalizeBibEntry.ts
+│           ├── formatters/           # Citation Style Formatters
+│           │   ├── shared/           #   共通プリミティブ（initials/DOI正規化等）
+│           │   ├── ieee.ts           #   IEEE
+│           │   ├── apa.ts            #   APA 7th
+│           │   ├── acm.ts            #   ACM
+│           │   ├── nature.ts         #   Nature
+│           │   ├── springer.ts       #   Springer / LNCS
+│           │   ├── mla.ts            #   MLA
+│           │   ├── chicago.ts        #   Chicago NB
+│           │   └── harvard.ts        #   Harvard
+│           └── bibToTxt.ts           # formatBibTeX() エントリーポイント
+├── index.html
+├── vite.config.ts
+├── tsconfig.json
 └── package.json
 ```
-
-主要ロジックは `parseCitation.ts`（変換）と `fetchCitation.ts`（API 連携）の 2 ファイルに分離しています。詳細な設計については各ファイルのコメントを参照してください。
 
 ---
 
 ## 制限事項
 
 - **IEEE / ScienceDirect URL 取得**：Cloudflare 等のボット対策により HTML メタタグのフェッチが失敗することがあります。DOI の直接入力を推奨します。
-- **CORS 制限**：ブラウザのセキュリティポリシーにより一部サイトへの直接 fetch が不可です。CORS プロキシ 2 段階（corsproxy.io → allorigins.win）にフォールバックしますが、それでも失敗するサイトがあります。
-- **Crossref 未登録 DOI**：Crossref に登録されていない DOI は 404 エラーになります（アプリの問題ではありません）。
+- **CORS 制限**：ブラウザのセキュリティポリシーにより一部サイトへの直接 fetch が不可です。CORS プロキシ 2 段階（corsproxy.io → allorigins.win）にフォールバックします（各 15 秒タイムアウト）。
+- **Crossref 未登録 DOI**：Crossref に登録されていない DOI は 404 エラーになります。
 - **TXT 解析精度**：引用テキストの書式が標準的でない場合、一部フィールドが抽出されないことがあります。
 
 ---
@@ -194,7 +242,7 @@ citation-bibtex-converter/
 1. AI 支援（Claude Code / Antigravity）を活用したプロトタイプ開発
 2. 研究・学習上の実課題を解決するプロダクトの試作
 3. GitHub へのソースコード公開
-4. Vercel へのデプロイ（予定）
+4. Vercel へのデプロイ
 
 ---
 
