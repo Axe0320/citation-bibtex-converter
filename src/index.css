@@ -207,6 +207,40 @@ body {
   padding: 0 .25rem;
 }
 
+/* ── Citation Style selector ─────────────────────── */
+
+.citation-style-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+}
+
+.citation-style-label {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-sub);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.citation-style-select {
+  font-size: .82rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--rx);
+  padding: .3rem .65rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .18s;
+  max-width: 100%;
+}
+.citation-style-select:hover { border-color: var(--border-hover); }
+.citation-style-select:focus { border-color: var(--border-focus); }
+
 /* ── Section headers ─────────────────────────────── */
 
 .section-header {
@@ -488,6 +522,8 @@ textarea[readonly]:focus { box-shadow: 0 0 0 3px rgba(108,99,255,.08); }
   .source-tab svg { display: none; }
   .type-selector { flex-direction: column; align-items: stretch; gap: .75rem; }
   .type-arrow { display: none; }
+  .citation-style-row { flex-wrap: wrap; }
+  .citation-style-select { flex: 1; }
   .type-btns { justify-content: flex-start; }
   textarea { min-height: 150px; font-size: .82rem; }
   .convert-btn { font-size: .9rem; }
