@@ -40,8 +40,8 @@ export function normalizeBibEntry(entry: BibEntry): NormalizedEntry {
     booktitle: field(f, 'booktitle'),
     volume:    field(f, 'volume'),
     number:    field(f, 'number'),
-    // "--" → en-dash per BibTeX/LaTeX convention
-    pages:     f.pages?.trim() ? f.pages.trim().replace(/--+/g, '–') : undefined,
+    // "-" or "--" → en-dash; matches classic mode behavior
+    pages:     f.pages?.trim() ? f.pages.trim().replace(/-+/g, '–') : undefined,
     doi:       field(f, 'doi'),
     publisher: field(f, 'publisher'),
     address:   field(f, 'address'),

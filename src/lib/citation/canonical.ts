@@ -1,24 +1,24 @@
 import type { ParsedFields } from './types'
-import type { NormalizedEntry } from '../bibtex/types'
-import { parseAuthors } from '../bibtex/normalize/parseAuthors'
 
 // ── Canonical citation ─────────────────────────────────────────────────────────
-// Extends NormalizedEntry with authorRaw pass-through so buildBibTeX can use
-// the original author string without re-serializing the parsed Author[].
-// Required-string redeclarations (journal, volume, number, pages, doi) keep
-// buildBibTeX compatible without logic changes.
+// Lightweight DTO for TXT → BibTeX path only.
+// Contains exactly the fields buildBibTeX() needs — no BibTeX-side types.
 
-export interface CanonicalCitation extends NormalizedEntry {
+export interface CanonicalCitation {
   authorRaw: string
+  title:     string
+  year:      string
+  journal?:  string
+  volume?:   string
+  number?:   string
+  pages?:    string
+  doi?:      string
 }
 
 export function toCanonical(f: ParsedFields): CanonicalCitation {
   return {
-    type:      'article',
-    key:       '',
-    title:     f.title,
-    authors:   parseAuthors(f.author),
     authorRaw: f.author,
+    title:     f.title,
     year:      f.year,
     journal:   f.journal || undefined,
     volume:    f.volume  || undefined,

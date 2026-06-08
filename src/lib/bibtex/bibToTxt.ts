@@ -12,7 +12,10 @@ function validateNormalized(e: NormalizedEntry): ValidationWarning[] {
   if (!hasAuthor)  w.push({ level: 'warn', message: '著者情報が入力されていません' })
   if (!e.title)    w.push({ level: 'warn', message: 'タイトルが入力されていません' })
   if (!e.year)     w.push({ level: 'warn', message: '発行年が入力されていません' })
-  if (!e.pages)    w.push({ level: 'warn', message: 'ページ情報が不完全な可能性があります' })
+  const p = e.pages?.trim() ?? ''
+  if (!p || /^0[-–]0$/.test(p) || /^\d+$/.test(p)) {
+    w.push({ level: 'warn', message: 'ページ情報が不完全な可能性があります' })
+  }
   if (!e.doi)      w.push({ level: 'info', message: 'DOI が見つかりません\n※ DOI は必須ではありません' })
   return w
 }
