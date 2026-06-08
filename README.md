@@ -99,7 +99,7 @@ flowchart TD
 flowchart LR
     classDef mod   fill:#10B981,color:#fff,stroke:#059669
     classDef canon fill:#6EE7B7,color:#065F46,stroke:#059669
-    classDef style fill:#EF4444,color:#fff,stroke:#DC2626
+    classDef fmt   fill:#EF4444,color:#fff,stroke:#DC2626
     classDef io    fill:#6C63FF,color:#fff,stroke:#4a44cc
 
     TI([TXT 入力]):::io
@@ -123,7 +123,7 @@ flowchart LR
     subgraph C["bib → Citation Style"]
         C1[parseBibEntry]:::mod
         C2[normalizeBibEntry]:::mod
-        C3["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard"]:::style
+        C3["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard"]:::fmt
         C1 --> C2 --> C3
     end
 
