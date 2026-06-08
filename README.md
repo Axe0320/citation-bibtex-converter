@@ -65,7 +65,7 @@ flowchart TD
     end
 
     subgraph CONVERT["③ 変換エンジン"]
-        DET[detectFormat\n10形式自動判定\nIEEE / MDPI / APA / ACL / Elsevier 等]:::parse
+        DET[detectFormat\n11形式自動判定\nIEEE / MDPI / APA / ACL / Elsevier 等]:::parse
         T2B[TXT → BibTeX\nDOI-first + 形式別パーサー]:::parse
         B2B[BibTeX ⇄ BibTeX / TXT\nField Selector 16項目]:::parse
     end
@@ -112,8 +112,8 @@ flowchart TD
 1. **Citation ⇄ BibTeX 相互変換**
    TXT→BibTeX / BibTeX→TXT / BibTeX→BibTeX / TXT→TXT の 4 モードに対応。入力内容から `@article` 等を検出してモードを自動判定します。
 
-2. **TXT 引用フォーマット 10+ 形式対応**
-   IEEE / MDPI/ACS / APA / Harvard / Vancouver / AMA / Author Library / Springer / Chicago / Elsevier など主要な引用形式を自動識別し、形式別パーサーで正確に BibTeX を生成します。
+2. **TXT 引用フォーマット 11 形式対応**
+   IEEE / MDPI / APA / Harvard / Vancouver-AMA / Author Library / Springer Nature / Springer APA / ACM-ACL / Elsevier / Unknown の 11 形式を自動識別し、形式別パーサーで正確に BibTeX を生成します。BibTeX キーは DOI 優先・筆頭著者+年方式（例: `Smith2024`）で自動生成されます。
 
 3. **Citation Style Formatter（BibTeX → TXT）**
    BibTeX 入力から 8 種類の引用スタイルで出力を生成します。FieldSelector と組み合わせた style-aware free formatting により、選択したフィールドのみで自然な引用文を出力します。
@@ -191,23 +191,30 @@ citation-bibtex-converter/
 │   ├── index.css            # スタイル定義（CSS カスタムプロパティ）
 │   ├── main.tsx             # アプリエントリーポイント
 │   └── lib/
-│       └── bibtex/
-│           ├── types.ts              # CitationStyle / Author / NormalizedEntry 型
-│           ├── parser/               # BibTeX パーサー（brace-depth aware）
-│           ├── normalize/            # BibEntry → NormalizedEntry 正規化
-│           │   ├── parseAuthors.ts   #   著者分割（複合姓・suffix・組織名）
+│       ├── citation/                 # v3: TXT→BibTeX 変換モジュール
+│       │   ├── types.ts              #   DataType / FieldSelection / ParsedFields 等
+│       │   ├── helpers.ts            #   extractDOI / bibKey（筆頭著者+年 key 生成）
+│       │   ├── parsers.ts            #   形式別パーサー 10 種
+│       │   ├── detect.ts             #   detectFormat registry（priority metadata）
+│       │   ├── canonical.ts          #   CanonicalCitation / toCanonical()
+│       │   └── builder.ts            #   validate / buildBibTeX
+│       └── bibtex/                   # BibTeX→TXT 変換モジュール
+│           ├── types.ts              #   CitationStyle / Author / NormalizedEntry 型
+│           ├── parser/               #   BibTeX パーサー（brace-depth aware）
+│           ├── normalize/            #   BibEntry → NormalizedEntry 正規化
+│           │   ├── parseAuthors.ts   #     著者分割（複合姓・suffix・組織名）
 │           │   └── normalizeBibEntry.ts
-│           ├── formatters/           # Citation Style Formatters
-│           │   ├── shared/           #   共通プリミティブ（initials/DOI正規化等）
-│           │   ├── ieee.ts           #   IEEE
-│           │   ├── apa.ts            #   APA 7th
-│           │   ├── acm.ts            #   ACM
-│           │   ├── nature.ts         #   Nature
-│           │   ├── springer.ts       #   Springer / LNCS
-│           │   ├── mla.ts            #   MLA
-│           │   ├── chicago.ts        #   Chicago NB
-│           │   └── harvard.ts        #   Harvard
-│           └── bibToTxt.ts           # formatBibTeX() エントリーポイント
+│           ├── formatters/           #   Citation Style Formatters
+│           │   ├── shared/           #     共通プリミティブ（initials/DOI正規化等）
+│           │   ├── ieee.ts           #     IEEE
+│           │   ├── apa.ts            #     APA 7th
+│           │   ├── acm.ts            #     ACM
+│           │   ├── nature.ts         #     Nature
+│           │   ├── springer.ts       #     Springer / LNCS
+│           │   ├── mla.ts            #     MLA
+│           │   ├── chicago.ts        #     Chicago NB
+│           │   └── harvard.ts        #     Harvard
+│           └── bibToTxt.ts           #   formatBibTeX() エントリーポイント
 ├── index.html
 ├── vite.config.ts
 ├── tsconfig.json
@@ -225,13 +232,31 @@ citation-bibtex-converter/
 
 ---
 
+## Version History
+
+| Version | Focus | 主な追加機能 |
+|---|---|---|
+| v1 | 基本変換 | TXT → BibTeX（IEEE / APA 等）、DOI / URL fetch |
+| v2 | Formatter 拡張 | BibTeX → TXT 8 スタイル、Field Selector 16 項目 |
+| v3 | アーキテクチャ刷新 | God file 解体・Registry パターン・Canonical layer・筆頭著者 key（Smith2024） |
+
+---
+
 ## Roadmap
 
-- [ ] 複数引用の一括変換（バッチ処理）
-- [ ] Citation Key の自動生成ルール設定
+### Should
+- [ ] 複数文献一括変換（バッチ処理）
+- [ ] 複数文献一括保存（`.bib` ファイルへの追記）
+- [ ] Markdown citation support（`[@Smith2024]` 形式）
+- [ ] 日本語 citation parser（和文引用形式の自動認識）
 - [ ] BibTeX エントリタイプ選択（`@inproceedings` / `@book` 等）
 - [ ] RIS / EndNote 形式へのエクスポート
-- [ ] 対応出版社 URL の拡充
+
+### Could
+- [ ] PNG → EPS 変換 web app（LaTeX 図版ワークフロー）
+- [ ] 図の色・文字編集 web app
+- [ ] 各変換ツール統合（論文執筆ワークスペース）
+- [ ] VSCode 完結型論文執筆環境
 
 ---
 
