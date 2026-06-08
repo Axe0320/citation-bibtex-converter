@@ -42,67 +42,95 @@ DOI か URL を貼るだけで BibTeX が手に入る、研究者のための引
 
 ## アーキテクチャ
 
+### システム全体
+
 ```mermaid
 flowchart TD
-    classDef input   fill:#6C63FF,color:#fff,stroke:#4a44cc
-    classDef api     fill:#F59E0B,color:#fff,stroke:#D97706
-    classDef parse   fill:#10B981,color:#fff,stroke:#059669
-    classDef format  fill:#EF4444,color:#fff,stroke:#DC2626
-    classDef out     fill:#3B82F6,color:#fff,stroke:#2563EB
+    classDef input  fill:#6C63FF,color:#fff,stroke:#4a44cc
+    classDef api    fill:#F59E0B,color:#fff,stroke:#D97706
+    classDef parse  fill:#10B981,color:#fff,stroke:#059669
+    classDef format fill:#EF4444,color:#fff,stroke:#DC2626
+    classDef out    fill:#3B82F6,color:#fff,stroke:#2563EB
 
-    subgraph IN["① 入力ソース（4タブ）"]
-        T([Text\nBibTeX / 引用TXT]):::input
-        D([DOI\n10.xxxx/xxxxx]):::input
-        U([URL\n論文ページ]):::input
-        F([File\n.bib / .txt]):::input
+    subgraph IN["① 入力（4タブ）"]
+        T([Text / File\nBibTeX or 引用TXT]):::input
+        D([DOI]):::input
+        U([URL]):::input
     end
 
     subgraph RESOLVE["② DOI 解決"]
         RX[URL 正規表現\ndoi.org / ACM / Springer]:::api
-        META[HTML メタタグ\ncitation_doi / prism.doi]:::api
-        PROXY[CORS プロキシ\ncorsproxy.io → allorigins.win]:::api
-        CR[Crossref REST API\napi.crossref.org]:::api
+        META[HTML メタタグ]:::api
+        PROXY[CORS プロキシ]:::api
+        CR[Crossref REST API]:::api
     end
 
-    subgraph CONVERT["③ 変換エンジン"]
-        DET[detectFormat\n11形式自動判定\nIEEE / MDPI / APA / ACL / Elsevier 等]:::parse
-        T2B[TXT → BibTeX\nDOI-first + 形式別パーサー]:::parse
-        B2B[BibTeX ⇄ BibTeX / TXT\nField Selector 16項目]:::parse
+    subgraph CONVERT["③ 変換（4モード）"]
+        CV["txt→bib  ·  bib→txt\nbib→bib  ·  txt→txt"]:::parse
     end
 
-    subgraph STYLE["④ Citation Style Formatter（新機能）"]
-        NORM[normalizeBibEntry\nAuthor 分割・pages 正規化]:::format
-        S1([IEEE]):::format
-        S2([APA 7th]):::format
-        S3([ACM]):::format
-        S4([Nature]):::format
-        S5([Springer / LNCS]):::format
-        S6([MLA]):::format
-        S7([Chicago]):::format
-        S8([Harvard]):::format
+    subgraph STYLE["④ Citation Style Formatter"]
+        SF["8 スタイル出力\nIEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard"]:::format
     end
 
     subgraph OUT["⑤ 出力"]
-        OP[BibTeX / TXT 出力]:::out
-        CP([Copy to Clipboard]):::out
-        DL([Download .bib / .txt]):::out
+        OP[BibTeX / TXT]:::out
+        CP([Copy]):::out
+        DL([Download]):::out
     end
 
     D --> CR
     U --> RX
-    RX -->|"DOI 抽出成功"| CR
-    RX -->|"DOI なし"| META
-    META --> PROXY
+    RX -->|"DOI あり"| CR
+    RX -->|"DOI なし"| META --> PROXY
     PROXY -->|"成功"| CR
-    PROXY -->|"失敗 (15s timeout)"| ERR([エラー表示]):::api
-    T & F --> DET --> T2B
-    CR --> T2B --> OP
-    T & F --> B2B --> OP
-    T & F --> NORM
-    NORM --> S1 & S2 & S3 & S4
-    NORM --> S5 & S6 & S7 & S8
-    S1 & S2 & S3 & S4 & S5 & S6 & S7 & S8 --> OP
+    PROXY -->|"失敗"| ERR([エラー表示]):::api
+    CR --> CV
+    T --> CV
+    T -->|"BibTeX 入力"| SF
+    CV --> OP
+    SF --> OP
     OP --> CP & DL
+```
+
+### 変換エンジン詳細
+
+```mermaid
+flowchart LR
+    classDef mod   fill:#10B981,color:#fff,stroke:#059669
+    classDef canon fill:#6EE7B7,color:#065F46,stroke:#059669
+    classDef style fill:#EF4444,color:#fff,stroke:#DC2626
+    classDef io    fill:#6C63FF,color:#fff,stroke:#4a44cc
+
+    TI([TXT 入力]):::io
+    BI([BibTeX 入力]):::io
+    OUT([出力]):::io
+
+    subgraph A["txt → bib"]
+        A1[detectFormat\n11形式 registry]:::mod
+        A2[parseByFormat\n形式別パーサー]:::mod
+        A3[toCanonical\nauthorRaw 保持]:::canon
+        A4["buildBibTeX\nbibKey = Smith2024"]:::mod
+        A1 --> A2 --> A3 --> A4
+    end
+
+    subgraph B["bib → txt / bib"]
+        B1[parseBibEntry]:::mod
+        B2[FieldSelector\n16 項目]:::mod
+        B1 --> B2
+    end
+
+    subgraph C["bib → Citation Style"]
+        C1[parseBibEntry]:::mod
+        C2[normalizeBibEntry]:::mod
+        C3["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard"]:::style
+        C1 --> C2 --> C3
+    end
+
+    TI --> A1
+    BI --> B1
+    BI --> C1
+    A4 & B2 & C3 --> OUT
 ```
 
 ---
