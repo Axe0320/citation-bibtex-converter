@@ -7,6 +7,12 @@ import { fetchByDOI, resolveDOIFromURL, citationDataToBib } from './fetchCitatio
 import { formatBibTeX } from './lib/bibtex/bibToTxt'
 import { splitCitations } from './lib/citation/splitCitations'
 import type { CitationStyle } from './lib/bibtex/types'
+import { parseBibEntry } from './lib/bibtex/parser/parseBibEntry'
+import { load as loadLibrary, save as saveLibrary, mergeReplace, checkBeforeSave } from './lib/library/storage'
+import type { LibraryEntry } from './lib/library/types'
+import { applyCleanupBatch } from './lib/bibtex/cleanup'
+import type { CleanupOptions } from './lib/bibtex/cleanup'
+import LibraryPanel from './components/LibraryPanel'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -131,6 +137,7 @@ export default function App() {
   const [fetchError, setFetchError]     = useState('')
   const [warnings, setWarnings]         = useState<ValidationWarning[]>([])
   const [copied, setCopied]             = useState(false)
+  const [toastMsg, setToastMsg]         = useState('')
   const [toastVisible, setToastVisible] = useState(false)
   const [isDragOver, setIsDragOver]     = useState(false)
   const [fileName, setFileName]         = useState('')
@@ -139,6 +146,9 @@ export default function App() {
   const [citationStyle, setCitationStyle] = useState<CitationStyle>('classic')
   const [entryType, setEntryType]       = useState<BibEntryType | 'auto'>('auto')
   const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null)
+  const [library, setLibrary]           = useState<LibraryEntry[]>(() => loadLibrary())
+  const [cleanupOpts, setCleanupOpts]   = useState<CleanupOptions>({ normalizeKeys: false, removeEmptyFields: false })
+  const [cleanupEntryType, setCleanupEntryType] = useState<BibEntryType | 'auto'>('auto')
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Toast auto-hide
@@ -147,6 +157,19 @@ export default function App() {
     const t = setTimeout(() => setToastVisible(false), 2200)
     return () => clearTimeout(t)
   }, [toastVisible])
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg)
+    setToastVisible(true)
+  }, [])
+
+  // Library persistence
+  useEffect(() => {
+    const result = saveLibrary(library)
+    if (result === 'warn') showToast('ライブラリが容量上限に近づいています')
+  }, [library, showToast])
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -180,6 +203,8 @@ export default function App() {
     setOutput('')
     clearErrors()
     setEntryType('auto')
+    setCleanupOpts({ normalizeKeys: false, removeEmptyFields: false })
+    setCleanupEntryType('auto')
   }, [clearErrors])
 
   const handleFile = useCallback((file: File) => {
@@ -203,6 +228,56 @@ export default function App() {
     const file = e.dataTransfer.files[0]
     if (file) handleFile(file)
   }, [handleFile])
+
+  const handleAddToLibrary = useCallback(() => {
+    if (!output) return
+    const chunks = splitCitations(output, 'bib').filter(c => c.trim().startsWith('@'))
+    if (!chunks.length) return
+
+    const now = Date.now()
+    const incoming: LibraryEntry[] = chunks.map((raw, i) => {
+      const parsed = parseBibEntry(raw)
+      return {
+        key:     parsed?.key    || `entry${now + i}`,
+        type:    (parsed?.type  ?? 'MISC').toLowerCase(),
+        raw:     raw.trim(),
+        addedAt: now + i,
+      }
+    })
+
+    const { merged, replaced } = mergeReplace(library, incoming)
+    const check = checkBeforeSave(merged)
+    if (check === 'full') {
+      showToast('保存できませんでした（容量超過）')
+      return
+    }
+    setLibrary(merged)
+    if (incoming.length === 1) {
+      showToast(replaced > 0 ? `${incoming[0].key} を上書きしました` : '1件追加しました')
+    } else {
+      showToast(`${incoming.length}件追加${replaced > 0 ? `・${replaced}件上書き` : ''}`)
+    }
+  }, [output, library, showToast])
+
+  const handleRemoveFromLibrary = useCallback((key: string) => {
+    setLibrary(prev => prev.filter(e => e.key !== key))
+  }, [])
+
+  const handleClearLibrary = useCallback(() => {
+    setLibrary([])
+  }, [])
+
+  const handleDownloadAll = useCallback(() => {
+    if (!library.length) return
+    const content = library.map(e => e.raw).join('\n\n')
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'library.bib'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [library])
+
+  const hasCleanup = cleanupOpts.normalizeKeys || cleanupOpts.removeEmptyFields || cleanupEntryType !== 'auto'
 
   const handleConvert = useCallback(async () => {
     clearErrors()
@@ -304,6 +379,22 @@ export default function App() {
       return
     }
 
+    // Cleanup mode: bib→bib with at least one cleanup option active
+    if (inputType === 'bib' && outputType === 'bib' && hasCleanup) {
+      const cleanOpts: CleanupOptions = {
+        entryType:         cleanupEntryType === 'auto' ? undefined : cleanupEntryType,
+        normalizeKeys:     cleanupOpts.normalizeKeys,
+        removeEmptyFields: cleanupOpts.removeEmptyFields,
+      }
+      const isMulti = inputSource !== 'doi' && inputSource !== 'url' && isBatch(input, 'bib')
+      const chunks  = isMulti ? splitCitations(input, 'bib') : [input.trim()]
+      const cleaned = applyCleanupBatch(chunks.filter(Boolean), cleanOpts)
+      setOutput(cleaned.join('\n\n'))
+      setWarnings([])
+      setBatchSummary(isMulti ? { successCount: cleaned.length, errorCount: 0 } : null)
+      return
+    }
+
     const opts = entryType === 'auto' ? undefined : { entryType }
 
     // Batch mode: text / file sources with multiple entries
@@ -329,7 +420,7 @@ export default function App() {
     }
     setOutput(result.output ?? '')
     setWarnings(result.warnings ?? [])
-  }, [input, inputSource, inputType, outputType, citationStyle, fields, entryType, clearErrors])
+  }, [input, inputSource, inputType, outputType, citationStyle, fields, entryType, cleanupOpts, cleanupEntryType, hasCleanup, clearErrors])
 
   const handleFetch = useCallback(async () => {
     clearErrors()
@@ -380,9 +471,9 @@ export default function App() {
       el.value = output; document.body.appendChild(el); el.select()
       document.execCommand('copy'); document.body.removeChild(el)
     }
-    setCopied(true); setToastVisible(true)
+    setCopied(true); showToast('クリップボードにコピーしました')
     setTimeout(() => setCopied(false), 2200)
-  }, [output])
+  }, [output, showToast])
 
   const handleDownload = useCallback(() => {
     if (!output) return
@@ -547,6 +638,54 @@ export default function App() {
                 <option value="TECHREPORT">@techreport</option>
               </select>
             </div>
+          )}
+
+          {/* Cleanup options — bib→bib mode only */}
+          {inputType === 'bib' && outputType === 'bib' && (
+            <details className="cleanup-section">
+              <summary className="cleanup-toggle">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                Cleanup Options
+                {hasCleanup && <span style={{ color: 'var(--accent)', fontSize: '.7rem', marginLeft: '.25rem' }}>●</span>}
+              </summary>
+              <div className="cleanup-options">
+                <label className="cleanup-item">
+                  <input
+                    type="checkbox"
+                    checked={cleanupOpts.normalizeKeys}
+                    onChange={e => setCleanupOpts(p => ({ ...p, normalizeKeys: e.target.checked }))}
+                  />
+                  <span>Normalize citation keys (Smith2024 形式)</span>
+                </label>
+                <label className="cleanup-item">
+                  <input
+                    type="checkbox"
+                    checked={cleanupOpts.removeEmptyFields}
+                    onChange={e => setCleanupOpts(p => ({ ...p, removeEmptyFields: e.target.checked }))}
+                  />
+                  <span>Remove empty fields</span>
+                </label>
+                <div className="cleanup-item" style={{ gap: '.75rem' }}>
+                  <span className="cleanup-item-label">Entry Type</span>
+                  <select
+                    value={cleanupEntryType}
+                    onChange={e => setCleanupEntryType(e.target.value as BibEntryType | 'auto')}
+                  >
+                    <option value="auto">Auto（変換しない）</option>
+                    <option value="ARTICLE">@article</option>
+                    <option value="INPROCEEDINGS">@inproceedings</option>
+                    <option value="INCOLLECTION">@incollection</option>
+                    <option value="BOOK">@book</option>
+                    <option value="MISC">@misc</option>
+                    <option value="PHDTHESIS">@phdthesis</option>
+                    <option value="MASTERSTHESIS">@mastersthesis</option>
+                    <option value="TECHREPORT">@techreport</option>
+                  </select>
+                </div>
+              </div>
+            </details>
           )}
 
           {/* Input section */}
@@ -748,6 +887,11 @@ export default function App() {
                   </svg>
                   {outputType === 'bib' ? 'Download .bib' : 'Download .txt'}
                 </button>
+                {outputType === 'bib' && (
+                  <button className="add-lib-btn" onClick={handleAddToLibrary} disabled={!output}>
+                    + Add to Library
+                  </button>
+                )}
               </div>
             </div>
 
@@ -789,13 +933,20 @@ export default function App() {
           <FieldSelector sel={fields} onToggle={handleFieldToggle} />
         </div>
 
+        <LibraryPanel
+          entries={library}
+          onRemove={handleRemoveFromLibrary}
+          onClear={handleClearLibrary}
+          onDownloadAll={handleDownloadAll}
+        />
+
         <footer className="footer">Powered by React + TypeScript + Vite</footer>
       </div>
 
       {/* Toast */}
       <div className={`toast${toastVisible ? ' visible' : ''}`}>
         <span className="toast-dot" />
-        クリップボードにコピーしました
+        {toastMsg}
       </div>
     </div>
   )
