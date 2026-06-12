@@ -13,7 +13,10 @@ export function parseBibEntry(raw: string): BibEntry | null {
   if (!hm) return null
 
   const type = hm[1].toUpperCase()
-  const key = hm[2].trim()
+  // Discard if key looks like a captured field (contains = or {) — happens when
+  // there is no key on the opening line (e.g. @article{\n  author=...)
+  const rawKey = hm[2].trim()
+  const key = /[={]/.test(rawKey) ? '' : rawKey
   const fields = new Map<string, string>()
   let pos = hm[0].length
 

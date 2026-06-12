@@ -1,13 +1,14 @@
 import type { FieldSelection } from '../../../parseCitation'
 import type { CitationStyle, NormalizedEntry } from '../types'
-import { formatIEEE }     from './ieee'
-import { formatAPA }      from './apa'
-import { formatNature }   from './nature'
-import { formatACM }      from './acm'
+import { formatIEEE }    from './ieee'
+import { formatAPA }     from './apa'
+import { formatNature }  from './nature'
+import { formatACM }     from './acm'
 import { formatSpringer } from './springer'
-import { formatMLA }      from './mla'
-import { formatChicago }  from './chicago'
-import { formatHarvard }  from './harvard'
+import { formatMLA }     from './mla'
+import { formatChicago } from './chicago'
+import { formatHarvard } from './harvard'
+import { formatPandoc }  from './pandoc'
 
 // ── Formatter type ─────────────────────────────────────────────────────────────
 
@@ -26,6 +27,7 @@ const FORMATTERS: Partial<Record<CitationStyle, Formatter>> = {
   mla:      formatMLA,
   chicago:  formatChicago,
   harvard:  formatHarvard,
+  pandoc:   formatPandoc,
 }
 
 export function selectFormatter(style: CitationStyle): Formatter {

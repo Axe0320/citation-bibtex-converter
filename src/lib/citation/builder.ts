@@ -2,6 +2,12 @@ import type { FieldSelection, ValidationWarning, ParseResult } from './types'
 import type { CanonicalCitation } from './canonical'
 import { bibKey, fixLastLine } from './helpers'
 
+export function venueKeyForType(type: string): 'journal' | 'booktitle' | null {
+  if (/^ARTICLE$/i.test(type))                                   return 'journal'
+  if (/^(INPROCEEDINGS|INCOLLECTION|CONFERENCE)$/i.test(type))   return 'booktitle'
+  return null
+}
+
 export function validate(f: {
   author?: string; title?: string; year?: string; pages?: string; doi?: string
 }): ValidationWarning[] {
@@ -14,6 +20,9 @@ export function validate(f: {
     w.push({ level: 'warn', message: 'ページ情報が不完全な可能性があります' })
   }
   if (!f.doi?.trim()) w.push({ level: 'info', message: 'DOI が見つかりません\n※ DOI は必須ではありません' })
+  if (/[一-鿿぀-ヿ]/.test(f.author ?? '')) {
+    w.push({ level: 'warn', message: '著者名に日本語が含まれています。BibTeX の処理系によっては文字化けする可能性があります。' })
+  }
   return w
 }
 
@@ -39,7 +48,7 @@ export function allowedFields(sel: FieldSelection): Set<string> {
 
 export function buildBibTeX(
   entryType: string,
-  venueKey: 'journal' | 'booktitle',
+  venueKey: 'journal' | 'booktitle' | null,
   canonical: CanonicalCitation,
   sel: FieldSelection,
   warnings: ValidationWarning[],
@@ -48,9 +57,9 @@ export function buildBibTeX(
   const lines: string[] = [`@${entryType}{${key},`]
   const add = (cond: boolean, line: string) => { if (cond) lines.push(line) }
 
-  add(sel.author,                                        `  author={${canonical.authorRaw}},`)
-  add(sel.journalOrBooktitle && !!canonical.journal,     `  ${venueKey}={${canonical.journal}},`)
-  add(sel.title && !!canonical.title,                    `  title={${canonical.title}},`)
+  add(sel.author,                                                         `  author={${canonical.authorRaw}},`)
+  add(venueKey !== null && sel.journalOrBooktitle && !!canonical.journal, `  ${venueKey}={${canonical.journal}},`)
+  add(sel.title && !!canonical.title,                                     `  title={${canonical.title}},`)
   add(sel.year && !!canonical.year,                      `  year={${canonical.year}},`)
   add(sel.volume && !!canonical.volume,                  `  volume={${canonical.volume}},`)
   add(sel.number && !!canonical.number,                  `  number={${canonical.number}},`)

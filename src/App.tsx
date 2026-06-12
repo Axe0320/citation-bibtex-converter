@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
-  convert, detectInputMode, DEFAULT_FIELDS, extractDOI,
-  type DataType, type FieldSelection, type ValidationWarning,
+  convert, convertBatch, isBatch, detectInputMode, DEFAULT_FIELDS, extractDOI,
+  type DataType, type FieldSelection, type ValidationWarning, type BibEntryType, type BatchSummary,
 } from './parseCitation'
 import { fetchByDOI, resolveDOIFromURL, citationDataToBib } from './fetchCitation'
 import { formatBibTeX } from './lib/bibtex/bibToTxt'
+import { splitCitations } from './lib/citation/splitCitations'
 import type { CitationStyle } from './lib/bibtex/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -108,6 +109,12 @@ function FieldSelector({
   )
 }
 
+function getBatchSeparator(outputType: DataType, style: CitationStyle): string {
+  if (outputType === 'bib') return '\n\n'
+  if (style === 'pandoc')   return '\n\n'
+  return '\n\n---\n\n'
+}
+
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -130,6 +137,8 @@ export default function App() {
   const [isFetching, setIsFetching]     = useState(false)
   const [fields, setFields]             = useState<FieldSelection>(DEFAULT_FIELDS)
   const [citationStyle, setCitationStyle] = useState<CitationStyle>('classic')
+  const [entryType, setEntryType]       = useState<BibEntryType | 'auto'>('auto')
+  const [batchSummary, setBatchSummary] = useState<BatchSummary | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Toast auto-hide
@@ -153,12 +162,14 @@ export default function App() {
     setOutput('')
     clearErrors()
     setCopied(false)
+    setEntryType('auto')
   }, [clearErrors])
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value)
     clearErrors()
     setOutput('')
+    setBatchSummary(null)
     if (!value.trim()) { setManualInput(false); setFileName(''); return }
     if (!manualInput) setInputType(detectInputMode(value))
   }, [manualInput, clearErrors])
@@ -168,6 +179,7 @@ export default function App() {
     else setOutputType(type)
     setOutput('')
     clearErrors()
+    setEntryType('auto')
   }, [clearErrors])
 
   const handleFile = useCallback((file: File) => {
@@ -205,7 +217,7 @@ export default function App() {
         setOutput('')
         try {
           const data = await fetchByDOI(doi)
-          const rawBib = citationDataToBib(data)
+          const rawBib = citationDataToBib(data, entryType === 'auto' ? undefined : entryType)
           const result = convert(rawBib, 'bib', outputType, fields)
           if (!result.ok) setConvertError(result.error ?? '')
           else { setOutput(result.output ?? ''); setWarnings(result.warnings ?? []) }
@@ -221,6 +233,22 @@ export default function App() {
     // Citation Style mode: bib→txt with non-classic style → formatBibTeX()
     // Classic: falls through to convert() below — regression zero guaranteed
     if (inputType === 'bib' && outputType === 'txt' && citationStyle !== 'classic') {
+      const isMulti = inputSource !== 'doi' && inputSource !== 'url' && isBatch(input, inputType)
+      if (isMulti) {
+        const chunks = splitCitations(input, 'bib')
+        const results = chunks.map(chunk => formatBibTeX(chunk.trim(), citationStyle, fields))
+        const sep = getBatchSeparator(outputType, citationStyle)
+        const out = results.map((r, i) =>
+          r.ok ? (r.output ?? '') : `% [ERROR #${i + 1}] ${r.error ?? 'parse error'}`
+        ).join(sep)
+        setOutput(out)
+        setWarnings([])
+        setBatchSummary({
+          successCount: results.filter(r => r.ok).length,
+          errorCount:   results.filter(r => !r.ok).length,
+        })
+        return
+      }
       const result = formatBibTeX(input.trim(), citationStyle, fields)
       if (!result.ok) {
         if (!input.trim()) setInputError(result.error ?? '')
@@ -233,7 +261,23 @@ export default function App() {
       return
     }
 
-    const result = convert(input, inputType, outputType, fields)
+    const opts = entryType === 'auto' ? undefined : { entryType }
+
+    // Batch mode: text / file sources with multiple entries
+    if (inputSource !== 'doi' && inputSource !== 'url' && isBatch(input, inputType)) {
+      const { items, summary } = convertBatch(input, inputType, outputType, fields, opts)
+      const sep = getBatchSeparator(outputType, citationStyle)
+      const out = items.map(r =>
+        r.ok ? (r.output ?? '') : `% [ERROR #${r.index + 1}] ${r.error ?? 'parse error'}`
+      ).join(sep)
+      setOutput(out)
+      setWarnings([])
+      setBatchSummary(summary)
+      return
+    }
+
+    setBatchSummary(null)
+    const result = convert(input, inputType, outputType, fields, opts)
     if (!result.ok) {
       if (!input.trim()) setInputError(result.error ?? '')
       else setConvertError(result.error ?? '')
@@ -242,7 +286,7 @@ export default function App() {
     }
     setOutput(result.output ?? '')
     setWarnings(result.warnings ?? [])
-  }, [input, inputType, outputType, citationStyle, fields, clearErrors])
+  }, [input, inputSource, inputType, outputType, citationStyle, fields, entryType, clearErrors])
 
   const handleFetch = useCallback(async () => {
     clearErrors()
@@ -269,7 +313,7 @@ export default function App() {
         : rawInput
 
       const data = await fetchByDOI(doi)
-      const rawBib = citationDataToBib(data)
+      const rawBib = citationDataToBib(data, entryType === 'auto' ? undefined : entryType)
       const result = convert(rawBib, 'bib', outputType, fields)
       if (!result.ok) {
         setConvertError(result.error ?? '')
@@ -282,7 +326,7 @@ export default function App() {
     } finally {
       setIsFetching(false)
     }
-  }, [inputSource, doiInput, urlInput, outputType, fields, clearErrors])
+  }, [inputSource, doiInput, urlInput, outputType, fields, entryType, clearErrors])
 
   const handleCopy = useCallback(async () => {
     if (!output) return
@@ -429,6 +473,33 @@ export default function App() {
                 <option value="mla">MLA</option>
                 <option value="chicago">Chicago</option>
                 <option value="harvard">Harvard</option>
+                <option value="pandoc">Pandoc (Markdown)</option>
+              </select>
+            </div>
+          )}
+
+          {/* Entry Type selector — txt→bib and DOI/URL→bib modes only */}
+          {((inputType === 'txt' && outputType === 'bib') || (isFetchSource && outputType === 'bib')) && (
+            <div className="citation-style-row">
+              <span className="citation-style-label">Entry Type</span>
+              <select
+                className="citation-style-select"
+                value={entryType}
+                onChange={e => {
+                  setEntryType(e.target.value as BibEntryType | 'auto')
+                  setOutput('')
+                  clearErrors()
+                }}
+              >
+                <option value="auto">Auto（自動判定）</option>
+                <option value="ARTICLE">@article</option>
+                <option value="INPROCEEDINGS">@inproceedings</option>
+                <option value="INCOLLECTION">@incollection</option>
+                <option value="BOOK">@book</option>
+                <option value="MISC">@misc</option>
+                <option value="PHDTHESIS">@phdthesis</option>
+                <option value="MASTERSTHESIS">@mastersthesis</option>
+                <option value="TECHREPORT">@techreport</option>
               </select>
             </div>
           )}
@@ -652,6 +723,17 @@ export default function App() {
                     {w.message}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Batch summary */}
+            {batchSummary && output && (
+              <div className="validation-warnings">
+                <div className={batchSummary.errorCount > 0 ? 'warn-msg' : 'info-msg'}>
+                  <span>{batchSummary.errorCount > 0 ? '⚠' : 'ℹ'}</span>
+                  {batchSummary.successCount}件成功
+                  {batchSummary.errorCount > 0 && ` / ${batchSummary.errorCount}件エラー（出力内の % [ERROR #N] を確認してください）`}
+                </div>
               </div>
             )}
           </div>

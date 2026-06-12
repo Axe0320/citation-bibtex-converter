@@ -8,6 +8,7 @@ export type CitationStyle =
   | 'mla'
   | 'chicago'
   | 'harvard'
+  | 'pandoc'
 
 export interface Author {
   family: string

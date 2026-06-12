@@ -1,5 +1,7 @@
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+import type { BibEntryType } from './lib/citation/types'
+
 export interface CitationData {
   title: string
   authors: string[]
@@ -223,14 +225,14 @@ function parseCrossref(msg: any): CitationData {
 
 // ── CitationData → full BibTeX (pipe into convert()) ──────────────────────────
 
-export function citationDataToBib(data: CitationData): string {
+export function citationDataToBib(data: CitationData, entryType: BibEntryType = 'ARTICLE'): string {
   const author = data.authors.join(' and ')
   const last   = data.doi.split('/').pop() ?? ''
   const key    = last.replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)
     || `${(data.title.split(/\s+/)[0] ?? 'cite').replace(/[^a-zA-Z]/g, '')}${data.year || 'XXXX'}`
 
   const lines = [
-    `@article{${key},`,
+    `@${entryType.toLowerCase()}{${key},`,
     `  author={${author}},`,
     `  title={${data.title}},`,
     `  journal={${data.journal}},`,

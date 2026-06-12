@@ -72,4 +72,18 @@ export type CiteFormat =
   | 'springer_apa'
   | 'acm_acl'
   | 'elsevier'
+  | 'ja_ipsj'
+  | 'ja_ieice'
+  | 'ja_numbered'
+  | 'ja_generic'
   | 'unknown'
+
+export type BibEntryType =
+  | 'ARTICLE'
+  | 'INPROCEEDINGS'
+  | 'INCOLLECTION'
+  | 'BOOK'
+  | 'MISC'
+  | 'PHDTHESIS'
+  | 'MASTERSTHESIS'
+  | 'TECHREPORT'

@@ -8,15 +8,33 @@ export { extractDOI } from './lib/citation/helpers'
 
 // ── Internal imports ────────────────────────────────────────────────────────────
 
-import type { DataType, FieldSelection, ParseResult } from './lib/citation/types'
+import type { DataType, FieldSelection, ParseResult, BibEntryType } from './lib/citation/types'
 import { extractTitle, extractJournal, extractAuthor, extractDOI, fixLastLine } from './lib/citation/helpers'
 import { detectFormat, parseByFormat } from './lib/citation/detect'
 import { toCanonical } from './lib/citation/canonical'
-import { validate, allowedFields, buildBibTeX } from './lib/citation/builder'
+import { validate, allowedFields, buildBibTeX, venueKeyForType } from './lib/citation/builder'
+import { splitCitations, isBatch } from './lib/citation/splitCitations'
+
+export type { BibEntryType }
+export { isBatch }
+
+interface ConvertOpts {
+  entryType?: BibEntryType
+}
+
+export interface BatchItemResult extends ParseResult {
+  index: number
+  inputSnippet: string
+}
+
+export interface BatchSummary {
+  successCount: number
+  errorCount: number
+}
 
 // ── TXT → BibTeX ────────────────────────────────────────────────────────────────
 
-function txtToBib(raw: string, sel: FieldSelection): ParseResult {
+function txtToBib(raw: string, sel: FieldSelection, opts?: ConvertOpts): ParseResult {
   const fmt       = detectFormat(raw)
   const f         = parseByFormat(raw, fmt)
   const canonical = toCanonical(f)
@@ -25,12 +43,14 @@ function txtToBib(raw: string, sel: FieldSelection): ParseResult {
     return { ok: false, error: '引用情報を抽出できませんでした。フォーマットを確認してください。' }
   }
 
-  const warnings  = validate({ author: f.author, title: f.title, year: f.year, pages: f.pages, doi: f.doi })
-  // Conference papers → @INPROCEEDINGS with booktitle
-  // Conference if acm_acl AND text contains "In Proceedings" / "In " keyword
-  const isConf    = fmt === 'acm_acl' && /\bIn\s/.test(raw)
-  const entryType = isConf ? 'INPROCEEDINGS' : 'ARTICLE'
-  const venueKey  = isConf ? 'booktitle'     : 'journal'
+  const warnings = validate({ author: f.author, title: f.title, year: f.year, pages: f.pages, doi: f.doi })
+
+  const detectedIsConf                       = fmt === 'acm_acl' && /\bIn\s/.test(raw)
+  const autoVenueKey: 'journal' | 'booktitle' = detectedIsConf ? 'booktitle' : 'journal'
+  const entryType = opts?.entryType ?? (detectedIsConf ? 'INPROCEEDINGS' : 'ARTICLE')
+  // Manual override: use venueKeyForType() which may return null (suppresses venue field).
+  // Auto-detect: always output journal or booktitle.
+  const venueKey = opts?.entryType ? venueKeyForType(entryType) : autoVenueKey
 
   return buildBibTeX(entryType, venueKey, canonical, sel, warnings)
 }
@@ -144,18 +164,41 @@ export function detectInputMode(text: string): DataType {
     : 'txt'
 }
 
+export function convertBatch(
+  raw: string,
+  inputType: DataType,
+  outputType: DataType,
+  sel: FieldSelection,
+  opts?: ConvertOpts,
+): { items: BatchItemResult[]; summary: BatchSummary } {
+  const chunks = splitCitations(raw, inputType)
+  const items: BatchItemResult[] = chunks.map((chunk, i) => ({
+    ...convert(chunk, inputType, outputType, sel, opts),
+    index: i,
+    inputSnippet: chunk.slice(0, 60).replace(/\n/g, ' '),
+  }))
+  return {
+    items,
+    summary: {
+      successCount: items.filter(r => r.ok).length,
+      errorCount:   items.filter(r => !r.ok).length,
+    },
+  }
+}
+
 export function convert(
   raw: string,
   inputType: DataType,
   outputType: DataType,
   sel: FieldSelection,
+  opts?: ConvertOpts,
 ): ParseResult {
   const text = raw.trim()
   if (!text) {
     const what = inputType === 'bib' ? 'BibTeX' : '引用テキスト'
     return { ok: false, error: `入力が空です。${what}を貼り付けてください。` }
   }
-  if (inputType === 'txt' && outputType === 'bib') return txtToBib(text, sel)
+  if (inputType === 'txt' && outputType === 'bib') return txtToBib(text, sel, opts)
   if (inputType === 'bib' && outputType === 'txt') return bibToTxt(text, sel)
   if (inputType === 'bib' && outputType === 'bib') return bibToBib(text, sel)
   return txtToTxt(text, sel)

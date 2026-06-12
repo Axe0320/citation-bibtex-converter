@@ -67,18 +67,27 @@ function splitAuthorTokens(authorRaw: string): string[] {
 
 export function bibKey(doi: string, authorRaw: string, title: string, year: string): string {
   if (doi) {
-    const last = doi.split('/').pop() ?? ''
-    return last.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) || 'cite'
+    // Optional chaining guards against undefined in edge cases
+    const last = doi.split('/').pop()?.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12) ?? ''
+    return last || 'cite'
   }
   const yr = year || 'Unknown'
   const families = splitAuthorTokens(authorRaw)
     .slice(0, 1)
     .map(t => extractFamilyName(t.trim()))
-    .map(n => n.replace(/[^a-zA-Z]/g, ''))
+    .map(n => {
+      const ascii = n.replace(/[^a-zA-Z]/g, '')
+      if (ascii) return ascii
+      // For pure CJK names: use first 2 characters as a family-name estimate
+      // e.g. '田中太郎' → '田中', '山田花子' → '山田'
+      return n.replace(/[^一-鿿぀-ヿ]/g, '').slice(0, 2)
+    })
     .filter(Boolean)
   if (families.length > 0) return families.join('') + yr
-  const t = (title.split(/\s+/)[0] ?? 'cite').replace(/[^a-zA-Z]/g, '')
-  return `${t || 'cite'}${yr}`
+  const firstWord = title.split(/\s+/)[0] ?? ''
+  const titleKey  = firstWord.replace(/[^a-zA-Z]/g, '')
+    || firstWord.replace(/[^一-鿿぀-ヿ]/g, '').slice(0, 2)
+  return `${titleKey || 'cite'}${yr}`
 }
 
 export function fixLastLine(lines: string[]): void {
