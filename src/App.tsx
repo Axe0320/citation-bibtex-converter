@@ -261,6 +261,49 @@ export default function App() {
       return
     }
 
+    // Citation Style mode: txt→txt with non-classic style
+    // Two-step: txt→bib (all fields) then formatBibTeX with user's field selection
+    if (inputType === 'txt' && outputType === 'txt' && citationStyle !== 'classic') {
+      const opts = entryType === 'auto' ? undefined : { entryType }
+      const isMulti = inputSource !== 'doi' && inputSource !== 'url' && isBatch(input, inputType)
+      if (isMulti) {
+        const chunks = splitCitations(input, 'txt')
+        const results = chunks.map(chunk => {
+          const bib = convert(chunk.trim(), 'txt', 'bib', DEFAULT_FIELDS, opts)
+          if (!bib.ok) return { ok: false as const, output: undefined as string | undefined, error: bib.error }
+          return formatBibTeX(bib.output ?? '', citationStyle, fields)
+        })
+        const sep = getBatchSeparator(outputType, citationStyle)
+        const out = results.map((r, i) =>
+          r.ok ? (r.output ?? '') : `% [ERROR #${i + 1}] ${r.error ?? 'parse error'}`
+        ).join(sep)
+        setOutput(out)
+        setWarnings([])
+        setBatchSummary({
+          successCount: results.filter(r => r.ok).length,
+          errorCount:   results.filter(r => !r.ok).length,
+        })
+        return
+      }
+      const bib = convert(input.trim(), 'txt', 'bib', DEFAULT_FIELDS, opts)
+      if (!bib.ok) {
+        if (!input.trim()) setInputError(bib.error ?? '')
+        else setConvertError(bib.error ?? '')
+        setOutput('')
+        return
+      }
+      const result = formatBibTeX(bib.output ?? '', citationStyle, fields)
+      if (!result.ok) {
+        if (!input.trim()) setInputError(result.error ?? '')
+        else setConvertError(result.error ?? '')
+        setOutput('')
+        return
+      }
+      setOutput(result.output ?? '')
+      setWarnings(result.warnings ?? [])
+      return
+    }
+
     const opts = entryType === 'auto' ? undefined : { entryType }
 
     // Batch mode: text / file sources with multiple entries
@@ -314,19 +357,21 @@ export default function App() {
 
       const data = await fetchByDOI(doi)
       const rawBib = citationDataToBib(data, entryType === 'auto' ? undefined : entryType)
-      const result = convert(rawBib, 'bib', outputType, fields)
-      if (!result.ok) {
-        setConvertError(result.error ?? '')
+      if (outputType === 'txt' && citationStyle !== 'classic') {
+        const result = formatBibTeX(rawBib, citationStyle, fields)
+        if (!result.ok) setConvertError(result.error ?? '')
+        else { setOutput(result.output ?? ''); setWarnings(result.warnings ?? []) }
       } else {
-        setOutput(result.output ?? '')
-        setWarnings(result.warnings ?? [])
+        const result = convert(rawBib, 'bib', outputType, fields)
+        if (!result.ok) setConvertError(result.error ?? '')
+        else { setOutput(result.output ?? ''); setWarnings(result.warnings ?? []) }
       }
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Fetch failed.')
     } finally {
       setIsFetching(false)
     }
-  }, [inputSource, doiInput, urlInput, outputType, fields, entryType, clearErrors])
+  }, [inputSource, doiInput, urlInput, outputType, citationStyle, fields, entryType, clearErrors])
 
   const handleCopy = useCallback(async () => {
     if (!output) return
@@ -451,8 +496,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Citation Style selector — bib→txt mode only */}
-          {inputType === 'bib' && outputType === 'txt' && (
+          {/* Citation Style selector — output is TXT */}
+          {outputType === 'txt' && (
             <div className="citation-style-row">
               <span className="citation-style-label">Citation Style</span>
               <select
