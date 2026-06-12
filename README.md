@@ -124,31 +124,32 @@ flowchart LR
         A1 --> A2 --> A3 --> A4
     end
 
-    subgraph B["bib → txt / bib"]
-        B1[parseBibEntry]:::mod
-        B2[FieldSelector\n16 項目]:::mod
-        B1 --> B2
-    end
-
-    subgraph C["bib → Citation Style"]
-        C1[parseBibEntry]:::mod
-        C2[normalizeBibEntry]:::mod
-        C3["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard / Pandoc"]:::fmt
-        C1 --> C2 --> C3
-    end
-
-    subgraph D["bib → bib (Cleanup)"]
-        D1[parseBibEntry]:::mod
-        D2["retagEntry\nnormalizeKey\nremoveEmptyFields"]:::mod
-        D3[serialize]:::mod
-        D1 --> D2 --> D3
+    subgraph B["BibTeX 入力フロー"]
+        B0[parseBibEntry]:::mod
+        subgraph B1["bib → txt / bib (classic)"]
+            B1a[FieldSelector\n16 項目]:::mod
+        end
+        subgraph B2["bib → Citation Style"]
+            B2a[normalizeBibEntry]:::mod
+            B2b["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard / Pandoc"]:::fmt
+            B2a --> B2b
+        end
+        subgraph B3["bib → bib (Cleanup)"]
+            B3a["retagEntry\nnormalizeKey\nremoveEmptyFields"]:::mod
+            B3b[serialize]:::mod
+            B3a --> B3b
+        end
+        B0 --> B1a
+        B0 --> B2a
+        B0 --> B3a
     end
 
     TI --> A1
-    BI --> B1
-    BI --> C1
-    BI --> D1
-    A4 & B2 & C3 & D3 --> OUT
+    BI --> B0
+    A4 --> OUT
+    B1a --> OUT
+    B2b --> OUT
+    B3b --> OUT
 ```
 
 ---
