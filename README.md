@@ -47,7 +47,7 @@ DOI か URL を貼るだけで BibTeX が手に入る、研究者のための引
 ### システム全体
 
 ```mermaid
-flowchart TD
+flowchart LR
     classDef input  fill:#6C63FF,color:#fff,stroke:#4a44cc
     classDef api    fill:#F59E0B,color:#fff,stroke:#D97706
     classDef parse  fill:#10B981,color:#fff,stroke:#059669
@@ -56,48 +56,50 @@ flowchart TD
     classDef store  fill:#8B5CF6,color:#fff,stroke:#6D28D9
 
     subgraph IN["① 入力（4タブ）"]
+        direction TB
         T([Text / File\nBibTeX or 引用TXT]):::input
         D([DOI]):::input
         U([URL]):::input
     end
 
     subgraph RESOLVE["② DOI 解決"]
-        RX[URL 正規表現\ndoi.org / ACM / Springer]:::api
+        direction TB
+        RX["URL 正規表現\ndoi.org / ACM / Springer"]:::api
         META[HTML メタタグ]:::api
         PROXY[CORS プロキシ]:::api
         CR[Crossref REST API]:::api
+        ERR([エラー表示]):::api
+        RX -->|"DOI あり"| CR
+        RX -->|"DOI なし"| META --> PROXY
+        PROXY -->|"成功"| CR
+        PROXY -->|"失敗"| ERR
     end
 
-    subgraph CONVERT["③ 変換（4モード）"]
-        CV["txt→bib  ·  bib→txt\nbib→bib  ·  txt→txt"]:::parse
-        CL["Cleanup\n(bib→bib)"]:::parse
+    subgraph PROC["③ 変換・整形"]
+        direction TB
+        CV["変換エンジン\ntxt↔bib · bib→bib · Cleanup"]:::parse
+        SF["Citation Style Formatter\n9スタイル — IEEE / APA / ACM\nNature / Springer / MLA / Chicago / Harvard / Pandoc"]:::format
+        CV -->|"BibTeX→TXT\n＋スタイル指定時"| SF
     end
 
-    subgraph STYLE["④ Citation Style Formatter"]
-        SF["9 スタイル出力\nIEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard / Pandoc"]:::format
-    end
-
-    subgraph OUT["⑤ 出力"]
+    subgraph OUT["④ 出力"]
+        direction TB
         OP[BibTeX / TXT]:::out
         CP([Copy]):::out
-        DL([Download]):::out
+        DL([Download .bib / .txt]):::out
+        OP --> CP
+        OP --> DL
     end
 
     LIB[(Library\nlocalStorage\n≤500件 / 4MB)]:::store
 
+    T --> CV
     D --> CR
     U --> RX
-    RX -->|"DOI あり"| CR
-    RX -->|"DOI なし"| META --> PROXY
-    PROXY -->|"成功"| CR
-    PROXY -->|"失敗"| ERR([エラー表示]):::api
     CR --> CV
-    T --> CV
-    T -->|"BibTeX 入力"| SF
     CV --> OP
-    CV -->|"+ Add to Library"| LIB
     SF --> OP
-    OP --> CP & DL
+    CV -->|"+ Add to Library"| LIB
     LIB -->|"Download All"| DL
 ```
 
