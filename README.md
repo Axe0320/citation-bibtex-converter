@@ -18,6 +18,7 @@
 - BibTeX から **IEEE / APA / ACM / Nature / Springer / MLA / Chicago / Harvard / Pandoc** 形式に変換
 - DOI または論文 URL を貼り付けるだけで自動的に引用情報を取得
 - 複数文献の一括変換（バッチ処理）に対応
+- **BibTeX Library** でブラウザ内に複数エントリをセッションをまたいで保存・管理
 - `.bib` / `.txt` ファイルのアップロードにも対応
 
 バックエンド・データベース不要。ブラウザだけで完結します。
@@ -52,6 +53,7 @@ flowchart TD
     classDef parse  fill:#10B981,color:#fff,stroke:#059669
     classDef format fill:#EF4444,color:#fff,stroke:#DC2626
     classDef out    fill:#3B82F6,color:#fff,stroke:#2563EB
+    classDef store  fill:#8B5CF6,color:#fff,stroke:#6D28D9
 
     subgraph IN["① 入力（4タブ）"]
         T([Text / File\nBibTeX or 引用TXT]):::input
@@ -68,6 +70,7 @@ flowchart TD
 
     subgraph CONVERT["③ 変換（4モード）"]
         CV["txt→bib  ·  bib→txt\nbib→bib  ·  txt→txt"]:::parse
+        CL["Cleanup\n(bib→bib)"]:::parse
     end
 
     subgraph STYLE["④ Citation Style Formatter"]
@@ -80,6 +83,8 @@ flowchart TD
         DL([Download]):::out
     end
 
+    LIB[(Library\nlocalStorage\n≤500件 / 4MB)]:::store
+
     D --> CR
     U --> RX
     RX -->|"DOI あり"| CR
@@ -90,8 +95,10 @@ flowchart TD
     T --> CV
     T -->|"BibTeX 入力"| SF
     CV --> OP
+    CV -->|"+ Add to Library"| LIB
     SF --> OP
     OP --> CP & DL
+    LIB -->|"Download All"| DL
 ```
 
 ### 変換エンジン詳細
@@ -128,10 +135,18 @@ flowchart LR
         C1 --> C2 --> C3
     end
 
+    subgraph D["bib → bib (Cleanup)"]
+        D1[parseBibEntry]:::mod
+        D2["retagEntry\nnormalizeKey\nremoveEmptyFields"]:::mod
+        D3[serialize]:::mod
+        D1 --> D2 --> D3
+    end
+
     TI --> A1
     BI --> B1
     BI --> C1
-    A4 & B2 & C3 --> OUT
+    BI --> D1
+    A4 & B2 & C3 & D3 --> OUT
 ```
 
 ---
@@ -162,22 +177,33 @@ flowchart LR
 4. **複数文献一括変換（バッチ処理）**
    複数の BibTeX エントリや引用テキストを貼り付けると自動検出して一括変換します。CRLF（Windows 改行）対応。変換後に「N件成功 / M件エラー」のサマリーを表示し、エラー箇所はコメント付きで出力します。
 
-5. **BibTeX エントリタイプ選択**
+5. **BibTeX Library（ブラウザ内保存）**
+   変換した BibTeX エントリを "+ Add to Library" ボタンで localStorage に保存・管理します。同一 citation key は自動上書き（mergeReplace）。最大 500 件 / 4 MB まで保持し、超過時は警告を表示します。
+   - **Download All** ：保存済みエントリ全件を `.bib` ファイルとしてダウンロード
+   - **Clear All / 個別削除** ：エントリの選択的・一括削除
+
+6. **Cleanup Options（BibTeX → BibTeX）**
+   BibTeX→BibTeX モードでクリーンアップオプションを選択できます。
+   - **Normalize citation keys** ：`bibKey()` 形式（Smith2024 / 田中2024）に統一。重複キーは `a` `b` … のサフィックスで自動回避。
+   - **Remove empty fields** ：空フィールド（`{}` や空白のみ）を削除
+   - **Entry Type 変換** ：`@article` ↔ `@inproceedings` 等をリタグ。venue フィールド（`journal` / `booktitle`）はロスレスにリネーム。
+
+7. **BibTeX エントリタイプ選択**
    変換時に `@article` / `@inproceedings` / `@incollection` / `@book` / `@misc` / `@phdthesis` / `@mastersthesis` / `@techreport` を手動選択できます。`@book` 等では `journal={}` 等の空フィールドを出力しません。
 
-6. **DOI / URL Citation Fetch**
+8. **DOI / URL Citation Fetch**
    DOI（`10.xxxx/xxxxx`）または doi.org リンクを入力すると、Crossref REST API から著者・タイトル・巻号・ページを取得して BibTeX を自動生成します。エントリタイプ選択と組み合わせ可能。
 
-7. **Upload & Auto Detect**
+9. **Upload & Auto Detect**
    `.bib` / `.txt` ファイルをアップロードまたはドラッグ&ドロップすると、内容から入力タイプを自動判定します。
 
-8. **Field Selector**
-   出力に含めるフィールドをチェックボックスで選択できます（author / title / journal / doi / abstract 等 16 項目）。
+10. **Field Selector**
+    出力に含めるフィールドをチェックボックスで選択できます（author / title / journal / doi / abstract 等 16 項目）。
 
-9. **Validation Warning**
-   著者・タイトル・発行年・ページ・DOI の欠損を変換後に警告表示します。日本語著者名を含む場合は文字化けリスクの警告も表示します。
+11. **Validation Warning**
+    著者・タイトル・発行年・ページ・DOI の欠損を変換後に警告表示します。日本語著者名を含む場合は文字化けリスクの警告も表示します。
 
-10. **Copy / Download**
+12. **Copy / Download**
     出力テキストをクリップボードにコピー、または `.bib` / `.txt` ファイルとしてダウンロードできます。
 
 ---
@@ -229,6 +255,8 @@ citation-bibtex-converter/
 │   ├── __tests__/           # Vitest テスト
 │   │   ├── pr1234.test.ts   #   PR1–PR4 機能テスト（104件）
 │   │   └── regression.test.ts #  B1/B2 回帰テスト（8件）
+│   ├── components/
+│   │   └── LibraryPanel.tsx # BibTeX Library UI（折り畳み・一覧・Download All）
 │   └── lib/
 │       ├── citation/                 # TXT→BibTeX 変換モジュール
 │       │   ├── types.ts              #   DataType / BibEntryType / CiteFormat 等
@@ -241,25 +269,30 @@ citation-bibtex-converter/
 │       │   ├── canonical.ts          #   CanonicalCitation / toCanonical()
 │       │   ├── builder.ts            #   validate / venueKeyForType / buildBibTeX
 │       │   └── splitCitations.ts     #   splitCitations / isBatch（バッチ分割）
-│       └── bibtex/                   # BibTeX→TXT 変換モジュール
-│           ├── types.ts              #   CitationStyle / Author / NormalizedEntry 型
-│           ├── parser/               #   BibTeX パーサー（brace-depth aware）
-│           ├── normalize/            #   BibEntry → NormalizedEntry 正規化
-│           │   ├── parseAuthors.ts   #     著者分割（複合姓・suffix・組織名）
-│           │   └── normalizeBibEntry.ts
-│           ├── formatters/           #   Citation Style Formatters
-│           │   ├── shared/           #     共通プリミティブ（initials/DOI正規化等）
-│           │   │   └── buildAPAReference.ts  # APA参照文字列生成（APA/Pandoc共有）
-│           │   ├── ieee.ts           #     IEEE
-│           │   ├── apa.ts            #     APA 7th
-│           │   ├── pandoc.ts         #     Pandoc Markdown（[@key] + APA）
-│           │   ├── acm.ts            #     ACM
-│           │   ├── nature.ts         #     Nature
-│           │   ├── springer.ts       #     Springer / LNCS
-│           │   ├── mla.ts            #     MLA
-│           │   ├── chicago.ts        #     Chicago NB
-│           │   └── harvard.ts        #     Harvard
-│           └── bibToTxt.ts           #   formatBibTeX() エントリーポイント
+│       ├── bibtex/                   # BibTeX→TXT 変換・整形モジュール
+│       │   ├── types.ts              #   CitationStyle / Author / NormalizedEntry 型
+│       │   ├── serializer.ts         #   serialize(BibEntry): string（Map ベース canonical 出力）
+│       │   ├── cleanup.ts            #   retagEntry / normalizeKey / removeEmptyFields / applyCleanupBatch
+│       │   ├── parser/               #   BibTeX パーサー（brace-depth aware）
+│       │   ├── normalize/            #   BibEntry → NormalizedEntry 正規化
+│       │   │   ├── parseAuthors.ts   #     著者分割（複合姓・suffix・組織名）
+│       │   │   └── normalizeBibEntry.ts
+│       │   ├── formatters/           #   Citation Style Formatters
+│       │   │   ├── shared/           #     共通プリミティブ（initials/DOI正規化等）
+│       │   │   │   └── buildAPAReference.ts  # APA参照文字列生成（APA/Pandoc共有）
+│       │   │   ├── ieee.ts           #     IEEE
+│       │   │   ├── apa.ts            #     APA 7th
+│       │   │   ├── pandoc.ts         #     Pandoc Markdown（[@key] + APA）
+│       │   │   ├── acm.ts            #     ACM
+│       │   │   ├── nature.ts         #     Nature
+│       │   │   ├── springer.ts       #     Springer / LNCS
+│       │   │   ├── mla.ts            #     MLA
+│       │   │   ├── chicago.ts        #     Chicago NB
+│       │   │   └── harvard.ts        #     Harvard
+│       │   └── bibToTxt.ts           #   formatBibTeX() エントリーポイント
+│       └── library/                  # BibTeX Library（ブラウザ内永続化）
+│           ├── types.ts              #   LibraryEntry / SaveResult 型
+│           └── storage.ts            #   load / save / mergeReplace / checkBeforeSave
 ├── index.html
 ├── vite.config.ts
 ├── tsconfig.json
@@ -274,6 +307,7 @@ citation-bibtex-converter/
 - **CORS 制限**：ブラウザのセキュリティポリシーにより一部サイトへの直接 fetch が不可です。CORS プロキシ 2 段階（corsproxy.io → allorigins.win）にフォールバックします（各 15 秒タイムアウト）。
 - **Crossref 未登録 DOI**：Crossref に登録されていない DOI は 404 エラーになります。
 - **TXT 解析精度**：引用テキストの書式が標準的でない場合、一部フィールドが抽出されないことがあります。
+- **Library 永続化**：localStorage を使用しているため、ブラウザのデータ削除や容量制限の影響を受けます。上限は 500 件または 4 MB です。
 
 ---
 
@@ -285,6 +319,7 @@ citation-bibtex-converter/
 | v2 | Formatter 拡張 | BibTeX → TXT 8 スタイル、Field Selector 16 項目 |
 | v3 | アーキテクチャ刷新 | God file 解体・Registry パターン・Canonical layer・筆頭著者 key（Smith2024） |
 | v4 | 機能拡張 | 複数文献一括変換 / Pandoc `[@key]` スタイル / 日本語 citation parser (15形式) / BibTeX エントリタイプ選択 |
+| v5 | Library + Cleanup | BibTeX Library（localStorage 永続化・500件上限）/ Cleanup Options（key正規化・空フィールド削除・エントリタイプ変換） |
 
 ---
 
@@ -292,7 +327,7 @@ citation-bibtex-converter/
 
 ### Should
 - [x] 複数文献一括変換（バッチ処理）
-- [ ] 複数文献一括保存（`.bib` ファイルへの追記）
+- [x] 複数文献一括保存（`.bib` ファイルへの追記）
 - [x] Markdown citation support（`[@Smith2024]` 形式）
 - [x] 日本語 citation parser（和文引用形式の自動認識）
 - [x] BibTeX エントリタイプ選択（`@inproceedings` / `@book` 等）
