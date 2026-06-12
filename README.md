@@ -47,7 +47,7 @@ DOI か URL を貼るだけで BibTeX が手に入る、研究者のための引
 ### システム全体
 
 ```mermaid
-flowchart LR
+flowchart TD
     classDef input  fill:#6C63FF,color:#fff,stroke:#4a44cc
     classDef api    fill:#F59E0B,color:#fff,stroke:#D97706
     classDef parse  fill:#10B981,color:#fff,stroke:#059669
