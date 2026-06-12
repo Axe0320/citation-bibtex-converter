@@ -14,9 +14,10 @@
 
 論文執筆・文献管理の現場では、引用サイトによって「Cite This」の形式が異なったり、BibTeX しかない・TXT しかない・DOI の取得が面倒といった問題が頻繁に発生します。本プロジェクトは、**自分の研究体験から着想した**この非効率を解消するための Web アプリです。
 
-- 引用テキスト (TXT) を入力するだけで BibTeX を生成（10+ 形式対応）
-- BibTeX から **IEEE / APA / ACM / Nature / Springer / MLA / Chicago / Harvard** 形式に変換
+- 引用テキスト (TXT) を入力するだけで BibTeX を生成（15 形式対応・日本語引用含む）
+- BibTeX から **IEEE / APA / ACM / Nature / Springer / MLA / Chicago / Harvard / Pandoc** 形式に変換
 - DOI または論文 URL を貼り付けるだけで自動的に引用情報を取得
+- 複数文献の一括変換（バッチ処理）に対応
 - `.bib` / `.txt` ファイルのアップロードにも対応
 
 バックエンド・データベース不要。ブラウザだけで完結します。
@@ -70,7 +71,7 @@ flowchart TD
     end
 
     subgraph STYLE["④ Citation Style Formatter"]
-        SF["8 スタイル出力\nIEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard"]:::format
+        SF["9 スタイル出力\nIEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard / Pandoc"]:::format
     end
 
     subgraph OUT["⑤ 出力"]
@@ -107,7 +108,7 @@ flowchart LR
     OUT([出力]):::io
 
     subgraph A["txt → bib"]
-        A1[detectFormat\n11形式 registry]:::mod
+        A1[detectFormat\n15形式 registry]:::mod
         A2[parseByFormat\n形式別パーサー]:::mod
         A3[toCanonical\nauthorRaw 保持]:::canon
         A4["buildBibTeX\nbibKey = Smith2024"]:::mod
@@ -123,7 +124,7 @@ flowchart LR
     subgraph C["bib → Citation Style"]
         C1[parseBibEntry]:::mod
         C2[normalizeBibEntry]:::mod
-        C3["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard"]:::fmt
+        C3["IEEE / APA / ACM / Nature\nSpringer / MLA / Chicago / Harvard / Pandoc"]:::fmt
         C1 --> C2 --> C3
     end
 
@@ -140,11 +141,11 @@ flowchart LR
 1. **Citation ⇄ BibTeX 相互変換**
    TXT→BibTeX / BibTeX→TXT / BibTeX→BibTeX / TXT→TXT の 4 モードに対応。入力内容から `@article` 等を検出してモードを自動判定します。
 
-2. **TXT 引用フォーマット 11 形式対応**
-   IEEE / MDPI / APA / Harvard / Vancouver-AMA / Author Library / Springer Nature / Springer APA / ACM-ACL / Elsevier / Unknown の 11 形式を自動識別し、形式別パーサーで正確に BibTeX を生成します。BibTeX キーは DOI 優先・筆頭著者+年方式（例: `Smith2024`）で自動生成されます。
+2. **TXT 引用フォーマット 15 形式対応**
+   IEEE / MDPI / APA / Harvard / Vancouver-AMA / Author Library / Springer Nature / Springer APA / ACM-ACL / Elsevier の英語 10 形式に加え、情報処理学会 (IPSJ) / 電子情報通信学会 (IEICE) / 番号付き和文 / 和文汎用 の日本語 4 形式を自動識別します。BibTeX キーは DOI 優先・筆頭著者+年方式で自動生成（日本語著者: `田中2024`、英語著者: `Smith2024`）。
 
 3. **Citation Style Formatter（BibTeX → TXT）**
-   BibTeX 入力から 8 種類の引用スタイルで出力を生成します。FieldSelector と組み合わせた style-aware free formatting により、選択したフィールドのみで自然な引用文を出力します。
+   BibTeX 入力から 9 種類の引用スタイルで出力を生成します。FieldSelector と組み合わせた style-aware free formatting により、選択したフィールドのみで自然な引用文を出力します。
 
    | スタイル | 著者形式例 | 特徴 |
    |---|---|---|
@@ -156,21 +157,28 @@ flowchart LR
    | **MLA** | `Smith, John A., et al.` | `"Title."` 引用符、Year→Pages 順 |
    | **Chicago** | `Smith, John A., Mary K. Lee, and …` | 3著者まで全列記、4+でet al. |
    | **Harvard** | `Smith, J. A. & Lee, M. K.` | `'Title'` シングルクオート、Year 無括弧 |
+   | **Pandoc (Markdown)** | — | `[@key]` インライン引用 + APA 参照文字列 |
 
-4. **DOI / URL Citation Fetch**
-   DOI（`10.xxxx/xxxxx`）または doi.org リンクを入力すると、Crossref REST API から著者・タイトル・巻号・ページを取得して BibTeX を自動生成します。
+4. **複数文献一括変換（バッチ処理）**
+   複数の BibTeX エントリや引用テキストを貼り付けると自動検出して一括変換します。CRLF（Windows 改行）対応。変換後に「N件成功 / M件エラー」のサマリーを表示し、エラー箇所はコメント付きで出力します。
 
-5. **Upload & Auto Detect**
+5. **BibTeX エントリタイプ選択**
+   変換時に `@article` / `@inproceedings` / `@incollection` / `@book` / `@misc` / `@phdthesis` / `@mastersthesis` / `@techreport` を手動選択できます。`@book` 等では `journal={}` 等の空フィールドを出力しません。
+
+6. **DOI / URL Citation Fetch**
+   DOI（`10.xxxx/xxxxx`）または doi.org リンクを入力すると、Crossref REST API から著者・タイトル・巻号・ページを取得して BibTeX を自動生成します。エントリタイプ選択と組み合わせ可能。
+
+7. **Upload & Auto Detect**
    `.bib` / `.txt` ファイルをアップロードまたはドラッグ&ドロップすると、内容から入力タイプを自動判定します。
 
-6. **Field Selector**
+8. **Field Selector**
    出力に含めるフィールドをチェックボックスで選択できます（author / title / journal / doi / abstract 等 16 項目）。
 
-7. **Validation Warning**
-   著者・タイトル・発行年・ページ・DOI の欠損を変換後に警告表示します。
+9. **Validation Warning**
+   著者・タイトル・発行年・ページ・DOI の欠損を変換後に警告表示します。日本語著者名を含む場合は文字化けリスクの警告も表示します。
 
-8. **Copy / Download**
-   出力テキストをクリップボードにコピー、または `.bib` / `.txt` ファイルとしてダウンロードできます。
+10. **Copy / Download**
+    出力テキストをクリップボードにコピー、または `.bib` / `.txt` ファイルとしてダウンロードできます。
 
 ---
 
@@ -214,18 +222,22 @@ flowchart LR
 citation-bibtex-converter/
 ├── src/
 │   ├── App.tsx              # メインコンポーネント・状態管理・UI全体
-│   ├── parseCitation.ts     # TXT ⇄ BibTeX 変換ロジック（10+ 形式検出）
+│   ├── parseCitation.ts     # TXT ⇄ BibTeX 変換ロジック・バッチ処理 API
 │   ├── fetchCitation.ts     # DOI/URL 解決・Crossref API・CORS プロキシ
 │   ├── index.css            # スタイル定義（CSS カスタムプロパティ）
 │   ├── main.tsx             # アプリエントリーポイント
+│   ├── __tests__/           # Vitest テスト
+│   │   ├── pr1234.test.ts   #   PR1–PR4 機能テスト（104件）
+│   │   └── regression.test.ts #  B1/B2 回帰テスト（8件）
 │   └── lib/
-│       ├── citation/                 # v3: TXT→BibTeX 変換モジュール
-│       │   ├── types.ts              #   DataType / FieldSelection / ParsedFields 等
-│       │   ├── helpers.ts            #   extractDOI / bibKey（筆頭著者+年 key 生成）
-│       │   ├── parsers.ts            #   形式別パーサー 10 種
-│       │   ├── detect.ts             #   detectFormat registry（priority metadata）
+│       ├── citation/                 # TXT→BibTeX 変換モジュール
+│       │   ├── types.ts              #   DataType / BibEntryType / CiteFormat 等
+│       │   ├── helpers.ts            #   extractDOI / bibKey（CJK fallback対応）
+│       │   ├── parsers.ts            #   形式別パーサー 15 種（日本語 4 形式含む）
+│       │   ├── detect.ts             #   detectFormat registry（priority順ソート）
 │       │   ├── canonical.ts          #   CanonicalCitation / toCanonical()
-│       │   └── builder.ts            #   validate / buildBibTeX
+│       │   ├── builder.ts            #   validate / venueKeyForType / buildBibTeX
+│       │   └── splitCitations.ts     #   splitCitations / isBatch（バッチ分割）
 │       └── bibtex/                   # BibTeX→TXT 変換モジュール
 │           ├── types.ts              #   CitationStyle / Author / NormalizedEntry 型
 │           ├── parser/               #   BibTeX パーサー（brace-depth aware）
@@ -234,8 +246,10 @@ citation-bibtex-converter/
 │           │   └── normalizeBibEntry.ts
 │           ├── formatters/           #   Citation Style Formatters
 │           │   ├── shared/           #     共通プリミティブ（initials/DOI正規化等）
+│           │   │   └── buildAPAReference.ts  # APA参照文字列生成（APA/Pandoc共有）
 │           │   ├── ieee.ts           #     IEEE
 │           │   ├── apa.ts            #     APA 7th
+│           │   ├── pandoc.ts         #     Pandoc Markdown（[@key] + APA）
 │           │   ├── acm.ts            #     ACM
 │           │   ├── nature.ts         #     Nature
 │           │   ├── springer.ts       #     Springer / LNCS
@@ -267,17 +281,18 @@ citation-bibtex-converter/
 | v1 | 基本変換 | TXT → BibTeX（IEEE / APA 等）、DOI / URL fetch |
 | v2 | Formatter 拡張 | BibTeX → TXT 8 スタイル、Field Selector 16 項目 |
 | v3 | アーキテクチャ刷新 | God file 解体・Registry パターン・Canonical layer・筆頭著者 key（Smith2024） |
+| v4 | 機能拡張 | 複数文献一括変換 / Pandoc `[@key]` スタイル / 日本語 citation parser (15形式) / BibTeX エントリタイプ選択 |
 
 ---
 
 ## Roadmap
 
 ### Should
-- [ ] 複数文献一括変換（バッチ処理）
+- [x] 複数文献一括変換（バッチ処理）
 - [ ] 複数文献一括保存（`.bib` ファイルへの追記）
-- [ ] Markdown citation support（`[@Smith2024]` 形式）
-- [ ] 日本語 citation parser（和文引用形式の自動認識）
-- [ ] BibTeX エントリタイプ選択（`@inproceedings` / `@book` 等）
+- [x] Markdown citation support（`[@Smith2024]` 形式）
+- [x] 日本語 citation parser（和文引用形式の自動認識）
+- [x] BibTeX エントリタイプ選択（`@inproceedings` / `@book` 等）
 - [ ] RIS / EndNote 形式へのエクスポート
 
 ### Could
