@@ -1,6 +1,7 @@
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 import type { BibEntryType } from './lib/citation/types'
+import { venueKeyForType } from './lib/citation/builder'
 
 export interface CitationData {
   title: string
@@ -94,7 +95,6 @@ async function tryFetchHTML(url: string): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(url, { headers: { Accept: 'text/html,application/xhtml+xml' } })
     if (res.ok) {
-      console.log('[fetchDOI] direct fetch succeeded')
       return await res.text()
     }
   } catch { /* CORS blocked or timed out */ }
@@ -103,7 +103,6 @@ async function tryFetchHTML(url: string): Promise<string | null> {
   try {
     const res = await fetchWithTimeout(`https://corsproxy.io/?${encodeURIComponent(url)}`)
     if (res.ok) {
-      console.log('[fetchDOI] corsproxy.io succeeded')
       return await res.text()
     }
   } catch { /* proxy unavailable or timed out */ }
@@ -114,13 +113,11 @@ async function tryFetchHTML(url: string): Promise<string | null> {
     if (res.ok) {
       const json = await res.json() as { contents?: string }
       if (json.contents) {
-        console.log('[fetchDOI] allorigins.win succeeded')
         return json.contents
       }
     }
   } catch { /* proxy unavailable or timed out */ }
 
-  console.log('[fetchDOI] all fetch attempts blocked/failed for:', url)
   return null
 }
 
@@ -128,20 +125,16 @@ async function tryFetchHTML(url: string): Promise<string | null> {
 export async function resolveDOIFromURL(url: string): Promise<string> {
   const fromUrl = extractDOIFromURL(url)
   if (fromUrl) {
-    console.log('[fetchDOI] DOI from URL string:', fromUrl)
     return fromUrl
   }
 
-  console.log('[fetchDOI] No DOI in URL string, fetching page meta tags:', url)
   const html = await tryFetchHTML(url)
 
   if (html) {
     const doi = extractDOIFromHTML(html)
     if (doi) {
-      console.log('[fetchDOI] DOI from meta tags:', doi)
       return doi
     }
-    console.log('[fetchDOI] Page fetched but no DOI meta tag found')
   }
 
   throw new Error(
@@ -231,11 +224,12 @@ export function citationDataToBib(data: CitationData, entryType: BibEntryType = 
   const key    = last.replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)
     || `${(data.title.split(/\s+/)[0] ?? 'cite').replace(/[^a-zA-Z]/g, '')}${data.year || 'XXXX'}`
 
+  const venueKey = venueKeyForType(entryType)
   const lines = [
     `@${entryType.toLowerCase()}{${key},`,
     `  author={${author}},`,
     `  title={${data.title}},`,
-    `  journal={${data.journal}},`,
+    ...(venueKey ? [`  ${venueKey}={${data.journal}},`] : []),
     `  year={${data.year}},`,
     `  volume={${data.volume}},`,
     `  number={${data.number}},`,

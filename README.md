@@ -233,7 +233,10 @@ citation-bibtex-converter/
 │       ├── citation/                 # TXT→BibTeX 変換モジュール
 │       │   ├── types.ts              #   DataType / BibEntryType / CiteFormat 等
 │       │   ├── helpers.ts            #   extractDOI / bibKey（CJK fallback対応）
-│       │   ├── parsers.ts            #   形式別パーサー 15 種（日本語 4 形式含む）
+│       │   ├── parsers/              #   形式別パーサー 15 種（日本語 4 形式含む）
+│       │   │   ├── english.ts        #     英語パーサー 11 種
+│       │   │   ├── japanese.ts       #     日本語パーサー 4 種 + ヘルパー 7 種
+│       │   │   └── index.ts          #     re-export
 │       │   ├── detect.ts             #   detectFormat registry（priority順ソート）
 │       │   ├── canonical.ts          #   CanonicalCitation / toCanonical()
 │       │   ├── builder.ts            #   validate / venueKeyForType / buildBibTeX
