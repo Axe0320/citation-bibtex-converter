@@ -256,7 +256,8 @@ citation-bibtex-converter/
 │   │   ├── pr1234.test.ts   #   PR1–PR4 機能テスト（104件）
 │   │   └── regression.test.ts #  B1/B2 回帰テスト（8件）
 │   ├── components/
-│   │   └── LibraryPanel.tsx # BibTeX Library UI（折り畳み・一覧・Download All）
+│   │   ├── FieldSelector.tsx # フィールド選択チェックボックス UI（16項目）
+│   │   └── LibraryPanel.tsx  # BibTeX Library UI（折り畳み・一覧・Download All）
 │   └── lib/
 │       ├── citation/                 # TXT→BibTeX 変換モジュール
 │       │   ├── types.ts              #   DataType / BibEntryType / CiteFormat 等
@@ -318,8 +319,7 @@ citation-bibtex-converter/
 | v1 | 基本変換 | TXT → BibTeX（IEEE / APA 等）、DOI / URL fetch |
 | v2 | Formatter 拡張 | BibTeX → TXT 8 スタイル、Field Selector 16 項目 |
 | v3 | アーキテクチャ刷新 | God file 解体・Registry パターン・Canonical layer・筆頭著者 key（Smith2024） |
-| v4 | 機能拡張 | 複数文献一括変換 / Pandoc `[@key]` スタイル / 日本語 citation parser (15形式) / BibTeX エントリタイプ選択 |
-| v5 | Library + Cleanup | BibTeX Library（localStorage 永続化・500件上限）/ Cleanup Options（key正規化・空フィールド削除・エントリタイプ変換） |
+| v4 | 機能拡張 | 複数文献一括変換 / Pandoc `[@key]` スタイル / 日本語 citation parser (15形式) / BibTeX エントリタイプ選択 / BibTeX Library（localStorage 永続化）/ Cleanup Options（key 正規化・空フィールド削除・エントリタイプ変換） |
 
 ---
 
