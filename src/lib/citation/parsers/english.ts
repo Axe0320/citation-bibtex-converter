@@ -275,6 +275,72 @@ export function parseElsevier(raw: string): ParsedFields {
   }
 }
 
+export function parseLNCS(raw: string): ParsedFields {
+  // Author block ends at ": Title" — last "F." or "F.I." before ": Uppercase"
+  const colonM = raw.match(/^(.*?[A-Z]\.[A-Z]?\.?):\s+[A-Z]/)
+  const authorBlock = colonM ? colonM[1].trim() : ''
+  // rest begins at the first character of the title
+  const rest = colonM ? raw.slice(colonM[0].length - 1) : raw
+
+  // Split "Lastname, F., Lastname2, F.I., ..." into BibTeX "A and B and C"
+  // Strategy: split on ", " — non-initials token is a new lastname; initials token appends to last
+  const tokens = authorBlock.split(/,\s+/)
+  const initRe = /^[A-Z]\.(?:[A-Z]\.)*$/
+  const authorParts: string[] = []
+  for (const tok of tokens) {
+    if (initRe.test(tok.trim())) {
+      if (authorParts.length > 0) authorParts[authorParts.length - 1] += ', ' + tok.trim()
+    } else {
+      authorParts.push(tok.trim())
+    }
+  }
+  const author = authorParts.join(' and ')
+
+  // Year: use the LAST "(YYYY)" — conference names may contain an earlier year
+  const yearMatches = [...raw.matchAll(/\(((?:19|20)\d{2})\)/g)]
+  const year = yearMatches.length > 0
+    ? yearMatches[yearMatches.length - 1][1]
+    : (raw.match(/\b(19|20)\d{2}\b/) ?? [])[0] ?? ''
+
+  const isConf = /\bIn:\s+/.test(rest)
+
+  if (isConf) {
+    const tM = rest.match(/^(.+?)\.\s+In:\s+/)
+    const title = tM ? tM[1].trim() : ''
+    const afterIn = tM ? rest.slice(tM[0].length) : ''
+    // Skip optional editor block: "Lastname, F., Lastname2, F. (eds.) "
+    const edM = afterIn.match(/^.+?\(eds?\.\)\s+/)
+    const venueStr = edM ? afterIn.slice(edM[0].length) : afterIn
+    // Venue: up to ". Pages (Year)" or ". (Year)"
+    const vM = venueStr.match(/^(.+?)\.\s+([\d]+[–\-][\d]+)\s*\(/)
+            ?? venueStr.match(/^(.+?)\.\s*\(((?:19|20)\d{2})\)/)
+    const pagesM = venueStr.match(/([\d]+[–\-][\d]+)/)
+    return {
+      author,
+      title,
+      journal: vM ? vM[1].trim() : '',
+      year,
+      volume: '',
+      number: '',
+      pages: pagesM ? pagesM[1] : '',
+      doi: extractDOI(raw),
+    }
+  }
+
+  // Journal: "Title. Journal Vol[(No)], Pages (Year)."
+  const tM = rest.match(/^(.+?)\.\s+([A-Z][^.]+?)\s+(\d+)(?:\((\d+)\))?,\s*([\d–\-]+)\s*\(/)
+  return {
+    author,
+    title: tM ? tM[1].trim() : '',
+    journal: tM ? tM[2].trim() : '',
+    year,
+    volume: tM ? tM[3] : '',
+    number: tM ? (tM[4] ?? '') : '',
+    pages: tM ? tM[5] : '',
+    doi: extractDOI(raw),
+  }
+}
+
 export function parseUnknown(raw: string): ParsedFields {
   return {
     author:  extractAuthor(raw),

@@ -45,7 +45,8 @@ function txtToBib(raw: string, sel: FieldSelection, opts?: ConvertOpts): ParseRe
 
   const warnings = validate({ author: f.author, title: f.title, year: f.year, pages: f.pages, doi: f.doi })
 
-  const detectedIsConf                       = fmt === 'acm_acl' && /\bIn\s/.test(raw)
+  const detectedIsConf                       = (fmt === 'acm_acl' && /\bIn\s/.test(raw)) ||
+                                               (fmt === 'lncs' && /\bIn:\s/.test(raw))
   const autoVenueKey: 'journal' | 'booktitle' = detectedIsConf ? 'booktitle' : 'journal'
   const entryType = opts?.entryType ?? (detectedIsConf ? 'INPROCEEDINGS' : 'ARTICLE')
   // Manual override: use venueKeyForType() which may return null (suppresses venue field).

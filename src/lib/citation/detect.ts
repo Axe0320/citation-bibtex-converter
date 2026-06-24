@@ -2,7 +2,7 @@ import type { ParsedFields, CiteFormat } from './types'
 import {
   parseIEEE, parseMDPI, parseAPA, parseHarvard, parseVancouverAMA,
   parseAuthorLib, parseACMACL, parseSpringerNature, parseSpringerAPA,
-  parseElsevier, parseUnknown,
+  parseElsevier, parseLNCS, parseUnknown,
   parseJaIPSJ, parseJaIEICE, parseJaNumbered, parseJaGeneric,
 } from './parsers'
 
@@ -31,6 +31,7 @@ const DETECTORS: Detector[] = [
   { format: 'springer_nature', priority:  30, detect: t => /\bet al\./.test(t) && /\((?:19|20)\d{2}\)/.test(t),                  parse: parseSpringerNature },
   { format: 'springer_apa',    priority:  20, detect: t => / & [A-Z][a-z]+, [A-Z]/.test(t) && /\((?:19|20)\d{2}\)/.test(t),     parse: parseSpringerAPA },
   { format: 'elsevier',        priority:  10, detect: t => /\bVolume \d+/.test(t) || /\bISSN\b/.test(t),                         parse: parseElsevier },
+  { format: 'lncs',           priority:  15, detect: t => /^[^\s,;:]+,\s+[A-Z]\.[A-Z]?\.?(?:,|:)/.test(t) && /[A-Z]\.[A-Z]?\.?:\s+[A-Z]/.test(t) && /\((19|20)\d{2}\)/.test(t), parse: parseLNCS },
   // ja_generic: below all English detectors — CJK character count >= 5 required
   { format: 'ja_generic',      priority:   5, detect: t => (t.match(/[぀-ヿ一-鿿]/g) ?? []).length >= 5,         parse: parseJaGeneric },
 ]

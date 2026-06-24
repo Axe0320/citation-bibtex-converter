@@ -72,6 +72,7 @@ export type CiteFormat =
   | 'springer_apa'
   | 'acm_acl'
   | 'elsevier'
+  | 'lncs'
   | 'ja_ipsj'
   | 'ja_ieice'
   | 'ja_numbered'
