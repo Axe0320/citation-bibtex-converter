@@ -14,7 +14,7 @@
 
 論文執筆・文献管理の現場では、引用サイトによって「Cite This」の形式が異なったり、BibTeX しかない・TXT しかない・DOI の取得が面倒といった問題が頻繁に発生します。本プロジェクトは、**自分の研究体験から着想した**この非効率を解消するための Web アプリです。
 
-- 引用テキスト (TXT) を入力するだけで BibTeX を生成（15 形式対応・日本語引用含む）
+- 引用テキスト (TXT) を入力するだけで BibTeX を生成（16 形式対応・日本語引用含む）
 - BibTeX から **IEEE / APA / ACM / Nature / Springer / MLA / Chicago / Harvard / Pandoc** 形式に変換
 - DOI または論文 URL を貼り付けるだけで自動的に引用情報を取得
 - 複数文献の一括変換（バッチ処理）に対応
@@ -117,7 +117,7 @@ flowchart LR
     OUT([出力]):::io
 
     subgraph A["txt → bib"]
-        A1[detectFormat\n15形式 registry]:::mod
+        A1[detectFormat\n16形式 registry]:::mod
         A2[parseByFormat\n形式別パーサー]:::mod
         A3[toCanonical\nauthorRaw 保持]:::canon
         A4["buildBibTeX\nbibKey = Smith2024"]:::mod
@@ -159,8 +159,8 @@ flowchart LR
 1. **Citation ⇄ BibTeX 相互変換**
    TXT→BibTeX / BibTeX→TXT / BibTeX→BibTeX / TXT→TXT の 4 モードに対応。入力内容から `@article` 等を検出してモードを自動判定します。
 
-2. **TXT 引用フォーマット 15 形式対応**
-   IEEE / MDPI / APA / Harvard / Vancouver-AMA / Author Library / Springer Nature / Springer APA / ACM-ACL / Elsevier の英語 10 形式に加え、情報処理学会 (IPSJ) / 電子情報通信学会 (IEICE) / 番号付き和文 / 和文汎用 の日本語 4 形式を自動識別します。BibTeX キーは DOI 優先・筆頭著者+年方式で自動生成（日本語著者: `田中2024`、英語著者: `Smith2024`）。
+2. **TXT 引用フォーマット 16 形式対応**
+   IEEE / MDPI / APA / Harvard / Vancouver-AMA / Author Library / Springer Nature / Springer APA / ACM-ACL / Elsevier / LNCS の英語 11 形式に加え、情報処理学会 (IPSJ) / 電子情報通信学会 (IEICE) / 番号付き和文 / 和文汎用 の日本語 4 形式を自動識別します。BibTeX キーは DOI 優先・筆頭著者+年方式で自動生成（日本語著者: `田中2024`、英語著者: `Smith2024`）。
 
 3. **Citation Style Formatter（BibTeX → TXT）**
    BibTeX 入力から 9 種類の引用スタイルで出力を生成します。FieldSelector と組み合わせた style-aware free formatting により、選択したフィールドのみで自然な引用文を出力します。
